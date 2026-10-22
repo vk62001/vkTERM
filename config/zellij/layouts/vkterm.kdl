@@ -1,0 +1,29 @@
+// vkTERM — workspace tipo VS Code.
+//
+//   Explorador │ Editor (Micro, pestañas) │ Claude Code
+//     ⌘B       ├──────────────────────────┤ Codex
+//              │ Shell              ⌘J    │   ⌥⌘B
+//
+// El explorador es el plugin vkterm (alias en config.kdl), que también
+// oculta y muestra las zonas. Al hacerlo vuelve a aplicar este mismo layout
+// (plugins/vkterm/src/layout.rs), así que tamaños y nombres deben coincidir.
+// Claude Code y Codex quedan en espera ("Waiting to run") hasta pulsar Enter.
+layout {
+    default_tab_template {
+        children
+        pane size=1 borderless=true { plugin location="compact-bar"; }
+    }
+    tab name="workspace" focus=true {
+        pane split_direction="vertical" {
+            pane size="20%" name="Explorador" { plugin location="vkterm"; }
+            pane size="55%" split_direction="horizontal" {
+                pane size="70%" name="Editor" command="vkterm-editor" focus=true
+                pane size="30%" name="Shell" command="vkterm-shell"
+            }
+            pane size="25%" split_direction="horizontal" {
+                pane name="Claude Code" command="claude" start_suspended=true
+                pane name="Codex" command="codex" start_suspended=true
+            }
+        }
+    }
+}

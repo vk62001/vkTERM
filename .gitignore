@@ -1,0 +1,15 @@
+# Estado local de vkTERM (bin/vkterm): tema elegido con ⌘K ⌘T y datos de
+# Micro (MICRO_CONFIG_HOME apunta a config/local/micro)
+/config/local/
+
+# Estado que Micro guardaba en config/micro hasta que pasó a config/local
+/config/micro/backups/
+/config/micro/buffers/
+/config/micro/plug/
+
+# Futuros plugins Rust/WASM
+/plugins/**/target/
+*.wasm
+
+__pycache__/
+.DS_Store

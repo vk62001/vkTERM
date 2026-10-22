@@ -1,0 +1,15 @@
+{
+    "colorscheme": "vkterm",
+    "diffgutter": true,
+    "mkparents": true,
+    "savecursor": true,
+    "tabsize": 2,
+    "tabstospaces": true,
+    "ft:go": {
+        "tabsize": 4,
+        "tabstospaces": false
+    },
+    "ft:makefile": {
+        "tabstospaces": false
+    }
+}

@@ -1,0 +1,15 @@
+[package]
+name = "vkterm"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+description = "vkTERM: explorador tipo VS Code y controlador del workspace (plugin de Zellij)"
+publish = false
+
+[dependencies]
+zellij-tile = "=0.45.1"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

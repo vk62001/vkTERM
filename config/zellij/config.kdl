@@ -1,0 +1,298 @@
+// vkTERM — configuración de Zellij (Fase 1, probada con Zellij 0.45.1)
+//
+// bin/vkterm la carga con `zellij --config-dir config/zellij`; no se lee ni se
+// modifica ~/.config/zellij.
+//
+// Atajos: preset oficial "Unlock-First (non-colliding)" de Zellij
+// (default-plugins/configuration/src/presets.rs, v0.45.1) con primary=Ctrl y
+// secondary=Alt. Diferencias respecto al preset:
+//   - En modo locked solo se reservan Alt h/j/k/l, Alt =/-, Alt i/o, Alt z,
+//     Alt 0..9, Alt , / Alt ., Alt ?, Alt t y Alt u/y/a/s/x/c. Alt n/f/p/[/]
+//     y Alt+flechas quedan para Micro (multicursor, palabras, diff) y solo
+//     actúan en modo normal (tras Ctrl g).
+//   - Alt z (zoom), Alt 0..9, Alt , / ., Alt ?, Alt t y Alt u/y/a/s/x/c
+//     (destinos de la capa ⌘ de Ghostty) son añadidos de vkTERM.
+//   - Se omite la entrada "s" del modo session (zellij:share, servidor web).
+// Detalle y conflictos: docs/keybindings.md
+
+default_layout "vkterm"
+default_mode "locked"
+theme "catppuccin-mocha"
+
+// Plugin vkterm (plugins/vkterm): explorador y controlador del workspace.
+// Zellij expande las variables de entorno de la ruta; bin/vkterm exporta
+// VKTERM_HOME y compila el plugin si hace falta. El layout y los atajos usan
+// siempre el alias, para que todos los mensajes lleguen a la misma instancia.
+//
+// Los paneles sin foco se atenúan con los colores del tema elegido (⌘K ⌘T,
+// plugins/vkterm/src/themes.rs). Para fijar otros en todos los temas, añade
+// al alias un bloque { inactive_fg "#rrggbb"; inactive_bg "#rrggbb"; }.
+plugins {
+    vkterm location="file:/$VKTERM_HOME/plugins/vkterm/target/wasm32-wasip1/release/vkterm.wasm"
+}
+
+// Editor con el que Zellij abre archivos (`zellij edit`, editar el
+// scrollback): bin/vkterm-open los abre como pestaña del Micro del panel
+// Editor. bin/vkterm pone bin/ en el PATH de la sesión; $EDITOR sigue siendo
+// micro para git, los agentes y el shell.
+scrollback_editor "vkterm-open"
+
+show_startup_tips false
+show_release_notes false
+
+// El layout del proyecto es la fuente de verdad: no resucitar sesiones viejas.
+session_serialization false
+
+keybinds clear-defaults=true {
+    normal {
+        bind "Alt Left" { MoveFocusOrTab "Left"; }
+        bind "Alt Right" { MoveFocusOrTab "Right"; }
+        bind "Alt Down" { MoveFocus "Down"; }
+        bind "Alt Up" { MoveFocus "Up"; }
+        bind "Alt n" { NewPane; }
+        bind "Alt f" { ToggleFloatingPanes; }
+        bind "Alt [" { PreviousSwapLayout; }
+        bind "Alt ]" { NextSwapLayout; }
+        bind "Alt p" { TogglePaneInGroup; }
+        bind "Alt Shift p" { ToggleGroupMarking; }
+    }
+    locked {
+        bind "Ctrl g" { SwitchToMode "Normal"; }
+    }
+    resize {
+        bind "r" { SwitchToMode "Normal"; }
+        bind "h" "Left" { Resize "Increase Left"; }
+        bind "j" "Down" { Resize "Increase Down"; }
+        bind "k" "Up" { Resize "Increase Up"; }
+        bind "l" "Right" { Resize "Increase Right"; }
+        bind "H" { Resize "Decrease Left"; }
+        bind "J" { Resize "Decrease Down"; }
+        bind "K" { Resize "Decrease Up"; }
+        bind "L" { Resize "Decrease Right"; }
+        bind "=" "+" { Resize "Increase"; }
+        bind "-" { Resize "Decrease"; }
+    }
+    pane {
+        bind "p" { SwitchToMode "Normal"; }
+        bind "h" "Left" { MoveFocus "Left"; }
+        bind "l" "Right" { MoveFocus "Right"; }
+        bind "j" "Down" { MoveFocus "Down"; }
+        bind "k" "Up" { MoveFocus "Up"; }
+        bind "Tab" { SwitchFocus; }
+        bind ";" { FocusLastPane; }
+        bind "n" { NewPane; SwitchToMode "Locked"; }
+        bind "d" { NewPane "Down"; SwitchToMode "Locked"; }
+        bind "r" { NewPane "Right"; SwitchToMode "Locked"; }
+        bind "s" { NewPane "stacked"; SwitchToMode "Locked"; }
+        bind "x" { CloseFocus; SwitchToMode "Locked"; }
+        bind "f" { ToggleFocusFullscreen; SwitchToMode "Locked"; }
+        bind "Shift f" { ToggleFocusNoUiFullscreen; SwitchToMode "Locked"; }
+        bind "z" { TogglePaneFrames; SwitchToMode "Locked"; }
+        bind "w" { ToggleFloatingPanes; SwitchToMode "Locked"; }
+        bind "e" { TogglePaneEmbedOrFloating; SwitchToMode "Locked"; }
+        bind "c" { SwitchToMode "RenamePane"; PaneNameInput 0; }
+        bind "i" { TogglePanePinned; SwitchToMode "Locked"; }
+    }
+    move {
+        bind "m" { SwitchToMode "Normal"; }
+        bind "n" "Tab" { MovePane; }
+        bind "p" { MovePaneBackwards; }
+        bind "h" "Left" { MovePane "Left"; }
+        bind "j" "Down" { MovePane "Down"; }
+        bind "k" "Up" { MovePane "Up"; }
+        bind "l" "Right" { MovePane "Right"; }
+    }
+    tab {
+        bind "t" { SwitchToMode "Normal"; }
+        bind "r" { SwitchToMode "RenameTab"; TabNameInput 0; }
+        bind "h" "Left" "Up" "k" { GoToPreviousTab; }
+        bind "l" "Right" "Down" "j" { GoToNextTab; }
+        bind "n" { NewTab; SwitchToMode "Locked"; }
+        bind "x" { CloseTab; SwitchToMode "Locked"; }
+        bind "s" { ToggleActiveSyncTab; SwitchToMode "Locked"; }
+        bind "b" { BreakPane; SwitchToMode "Locked"; }
+        bind "]" { BreakPaneRight; SwitchToMode "Locked"; }
+        bind "[" { BreakPaneLeft; SwitchToMode "Locked"; }
+        bind "1" { GoToTab 1; SwitchToMode "Locked"; }
+        bind "2" { GoToTab 2; SwitchToMode "Locked"; }
+        bind "3" { GoToTab 3; SwitchToMode "Locked"; }
+        bind "4" { GoToTab 4; SwitchToMode "Locked"; }
+        bind "5" { GoToTab 5; SwitchToMode "Locked"; }
+        bind "6" { GoToTab 6; SwitchToMode "Locked"; }
+        bind "7" { GoToTab 7; SwitchToMode "Locked"; }
+        bind "8" { GoToTab 8; SwitchToMode "Locked"; }
+        bind "9" { GoToTab 9; SwitchToMode "Locked"; }
+        bind "Tab" { ToggleTab; }
+    }
+    scroll {
+        bind "s" { SwitchToMode "Normal"; }
+        bind "e" { EditScrollback; SwitchToMode "Locked"; }
+        bind "f" { SwitchToMode "EnterSearch"; SearchInput 0; }
+        bind "Ctrl c" { ScrollToBottom; SwitchToMode "Locked"; }
+        bind "j" "Down" { ScrollDown; }
+        bind "k" "Up" { ScrollUp; }
+        bind "Ctrl f" "PageDown" "Right" "l" { PageScrollDown; }
+        bind "Ctrl b" "PageUp" "Left" "h" { PageScrollUp; }
+        bind "d" { HalfPageScrollDown; }
+        bind "u" { HalfPageScrollUp; }
+        bind "Alt h" "Alt Left" { MoveFocusOrTab "Left"; SwitchToMode "Locked"; }
+        bind "Alt j" "Alt Down" { MoveFocus "Down"; SwitchToMode "Locked"; }
+        bind "Alt k" "Alt Up" { MoveFocus "Up"; SwitchToMode "Locked"; }
+        bind "Alt l" "Alt Right" { MoveFocusOrTab "Right"; SwitchToMode "Locked"; }
+        bind "[" { ScrollToPreviousPrompt; }
+        bind "]" { ScrollToNextPrompt; }
+        bind "m" { SelectCommandAtScrollPosition; }
+        bind "c" { CopyLastCommandOutput; SwitchToMode "Locked"; }
+    }
+    search {
+        bind "Ctrl c" { ScrollToBottom; SwitchToMode "Locked"; }
+        bind "j" "Down" { ScrollDown; }
+        bind "k" "Up" { ScrollUp; }
+        bind "Ctrl f" "PageDown" "Right" "l" { PageScrollDown; }
+        bind "Ctrl b" "PageUp" "Left" "h" { PageScrollUp; }
+        bind "d" { HalfPageScrollDown; }
+        bind "u" { HalfPageScrollUp; }
+        bind "n" { Search "down"; }
+        bind "p" { Search "up"; }
+        bind "c" { SearchToggleOption "CaseSensitivity"; }
+        bind "w" { SearchToggleOption "Wrap"; }
+        bind "o" { SearchToggleOption "WholeWord"; }
+        bind "[" { ScrollToPreviousPrompt; }
+        bind "]" { ScrollToNextPrompt; }
+        bind "m" { SelectCommandAtScrollPosition; }
+    }
+    entersearch {
+        bind "Ctrl c" "Esc" { SwitchToMode "Scroll"; }
+        bind "Enter" { SwitchToMode "Search"; }
+    }
+    renametab {
+        bind "Ctrl c" "Enter" { SwitchToMode "Locked"; }
+        bind "Esc" { UndoRenameTab; SwitchToMode "Tab"; }
+    }
+    renamepane {
+        bind "Ctrl c" "Enter" { SwitchToMode "Locked"; }
+        bind "Esc" { UndoRenamePane; SwitchToMode "Pane"; }
+    }
+    session {
+        bind "o" { SwitchToMode "Normal"; }
+        bind "d" { Detach; }
+        bind "]" { FocusHostSession; SwitchToMode "Locked"; }
+        bind "[" { FocusGuestSession; SwitchToMode "Locked"; }
+        bind "f" { ToggleHostFullscreen; SwitchToMode "Locked"; }
+        bind "w" {
+            LaunchOrFocusPlugin "session-manager" {
+                floating true
+                move_to_focused_tab true
+            };
+            SwitchToMode "Locked"
+        }
+        bind "c" {
+            LaunchOrFocusPlugin "configuration" {
+                floating true
+                move_to_focused_tab true
+            };
+            SwitchToMode "Locked"
+        }
+        bind "p" {
+            LaunchOrFocusPlugin "plugin-manager" {
+                floating true
+                move_to_focused_tab true
+            };
+            SwitchToMode "Locked"
+        }
+        bind "a" {
+            LaunchOrFocusPlugin "zellij:about" {
+                floating true
+                move_to_focused_tab true
+            };
+            SwitchToMode "Locked"
+        }
+        bind "l" {
+            LaunchOrFocusPlugin "zellij:layout-manager" {
+                floating true
+                move_to_focused_tab true
+            };
+            SwitchToMode "Locked"
+        }
+    }
+    shared_except "locked" "renametab" "renamepane" {
+        bind "Ctrl g" { SwitchToMode "Locked"; }
+        bind "Ctrl q" { Quit; }
+    }
+    shared_except "renamepane" "renametab" "entersearch" "locked" {
+        bind "Esc" { SwitchToMode "Locked"; }
+    }
+    shared_among "normal" "locked" {
+        bind "Alt h" { MoveFocusOrTab "Left"; }
+        bind "Alt l" { MoveFocusOrTab "Right"; }
+        bind "Alt j" { MoveFocus "Down"; }
+        bind "Alt k" { MoveFocus "Up"; }
+        bind "Alt =" "Alt +" { Resize "Increase"; }
+        bind "Alt -" { Resize "Decrease"; }
+        bind "Alt i" { MoveTab "Left"; }
+        bind "Alt o" { MoveTab "Right"; }
+        bind "Alt z" { ToggleFocusFullscreen; }
+        // Destinos de la capa ⌘ de Ghostty (config/ghostty/vkterm.ghostty).
+        // Cada uno es un mensaje al plugin vkterm, que actúa por identidad del
+        // panel aunque su propio panel esté oculto.
+        bind "Alt 1" { MessagePlugin "vkterm" { name "focus"; payload "explorer"; }; }
+        bind "Alt 2" { MessagePlugin "vkterm" { name "focus"; payload "editor"; }; }
+        bind "Alt 3" { MessagePlugin "vkterm" { name "focus"; payload "claude"; }; }
+        bind "Alt 4" { MessagePlugin "vkterm" { name "focus"; payload "codex"; }; }
+        bind "Alt 5" { MessagePlugin "vkterm" { name "focus"; payload "shell"; }; }
+        bind "Alt 6" { MessagePlugin "vkterm" { name "toggle_sidebar"; }; }
+        bind "Alt 7" { MessagePlugin "vkterm" { name "toggle_panel"; }; }
+        bind "Alt 8" { MessagePlugin "vkterm" { name "toggle_agents"; }; }
+        bind "Alt 9" { MessagePlugin "vkterm" { name "close_tab"; }; }
+        bind "Alt 0" { MessagePlugin "vkterm" { name "quick_open"; }; }
+        bind "Alt ," { MessagePlugin "vkterm" { name "prev_tab"; }; }
+        bind "Alt ." { MessagePlugin "vkterm" { name "next_tab"; }; }
+        // Edición, como VS Code (⌘Z ⌘⇧Z ⌘A ⌘F ⌘X ⌘C): el plugin la pasa a
+        // Micro solo si el editor tiene el foco.
+        bind "Alt u" { MessagePlugin "vkterm" { name "edit"; payload "undo"; }; }
+        bind "Alt y" { MessagePlugin "vkterm" { name "edit"; payload "redo"; }; }
+        bind "Alt a" { MessagePlugin "vkterm" { name "edit"; payload "select_all"; }; }
+        bind "Alt s" { MessagePlugin "vkterm" { name "edit"; payload "find"; }; }
+        bind "Alt x" { MessagePlugin "vkterm" { name "edit"; payload "cut"; }; }
+        bind "Alt c" { MessagePlugin "vkterm" { name "edit"; payload "copy"; }; }
+        // Ventana de atajos: otra instancia del plugin (mode "shortcuts") en
+        // un panel flotante; Zellij la lanza si no existe y ella se cierra si ya
+        // estaba abierta.
+        bind "Alt ?" {
+            MessagePlugin "vkterm" {
+                name "toggle_shortcuts"
+                mode "shortcuts"
+                floating true
+            };
+        }
+        // Selector de tema, igual: otra instancia (mode "themes").
+        bind "Alt t" {
+            MessagePlugin "vkterm" {
+                name "toggle_themes"
+                mode "themes"
+                floating true
+            };
+        }
+    }
+    shared_except "locked" "renametab" "renamepane" {
+        bind "Enter" { SwitchToMode "Locked"; }
+    }
+    shared_except "pane" "locked" "renametab" "renamepane" "entersearch" {
+        bind "p" { SwitchToMode "Pane"; }
+    }
+    shared_except "resize" "locked" "renametab" "renamepane" "entersearch" {
+        bind "r" { SwitchToMode "Resize"; }
+    }
+    shared_except "scroll" "locked" "renametab" "renamepane" "entersearch" {
+        bind "s" { SwitchToMode "Scroll"; }
+    }
+    shared_except "session" "locked" "renametab" "renamepane" "entersearch" {
+        bind "o" { SwitchToMode "Session"; }
+    }
+    shared_except "tab" "locked" "renametab" "renamepane" "entersearch" {
+        bind "t" { SwitchToMode "Tab"; }
+    }
+    shared_except "move" "locked" "renametab" "renamepane" "entersearch" {
+        bind "m" { SwitchToMode "Move"; }
+    }
+}

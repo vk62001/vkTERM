@@ -1,0 +1,114 @@
+# vkTERM — perfil de Ghostty (Fase 1, probado con Ghostty 1.3.1)
+#
+# bin/vkterm-ghostty lo carga con --config-default-files=false, así que
+# ~/.config/ghostty no se lee ni se modifica.
+
+title = vkTERM
+theme = Catppuccin Mocha
+maximize = true
+window-save-state = never
+macos-titlebar-style = transparent
+window-padding-x = 4
+window-padding-y = 2
+window-padding-balance = true
+
+# ⌥ Option: los dos escriben los caracteres del teclado, como en cualquier
+# app de macOS y en VS Code (Spanish - ISO: ⌥2 = @, ⌥3 = #, [ ] { } | \ ~).
+# Las combinaciones que no producen un carácter (⌥← / ⌥→) siguen llegando
+# como Alt: saltan palabra a palabra.
+macos-option-as-alt = false
+
+# ⌘ Command: Zellij y Micro nunca reciben la tecla Command. Ghostty traduce
+# estos atajos a secuencias que sí entienden:
+#   - Alt+tecla (ESC + tecla): códigos internos que Zellij enlaza en
+#     config/zellij/config.kdl (activos también en modo locked) y convierte en
+#     mensajes al plugin vkterm.
+#   - F2 (ESC O Q): Guardar en Micro. No se usa Ctrl-S porque congela la
+#     salida de los comandos en los shells (control de flujo XON/XOFF).
+
+# ⌘1..⌘5: Explorador, Editor, Claude Code, Codex, Shell (por identidad; si el
+# panel está oculto, se muestra). Se cubren la tecla física (digit_N) y el
+# carácter (N), que por defecto cambiaban de pestaña.
+keybind = super+digit_1=esc:1
+keybind = super+digit_2=esc:2
+keybind = super+digit_3=esc:3
+keybind = super+digit_4=esc:4
+keybind = super+digit_5=esc:5
+keybind = super+1=esc:1
+keybind = super+2=esc:2
+keybind = super+3=esc:3
+keybind = super+4=esc:4
+keybind = super+5=esc:5
+
+# Como VS Code: ⌘B barra lateral (explorador), ⌘J panel (Shell), ⌥⌘B barra
+# secundaria (Claude Code y Codex). Muestran / ocultan sin cerrar procesos.
+# ⌥⌘B se cubre por tecla física y por carácter (con el ⌥ izquierdo, macOS
+# convierte la b en otro carácter).
+keybind = super+b=esc:6
+keybind = super+j=esc:7
+keybind = super+alt+b=esc:8
+keybind = super+alt+key_b=esc:8
+
+# Pestañas del editor, como VS Code: ⌘⌥← / ⌘⌥→ y ⌃⇧Tab / ⌃Tab (en Ghostty
+# eran sus propios splits y pestañas). ⌘W cierra la pestaña del editor; en
+# Ghostty cerraba la ventana. ⌘⌥↑ / ⌘⌥↓ mueven el foco al panel de
+# arriba / abajo (editor ↔ Shell).
+keybind = super+alt+arrow_left=esc:,
+keybind = super+alt+arrow_right=esc:.
+keybind = ctrl+shift+tab=esc:,
+keybind = ctrl+tab=esc:.
+keybind = super+w=esc:9
+keybind = super+alt+arrow_up=esc:k
+keybind = super+alt+arrow_down=esc:j
+
+# ⌘P: abrir archivo en una pestaña nueva (línea de comandos de Micro con
+# "tab ", Tab completa rutas).
+keybind = super+p=esc:0
+
+# ⌘S: guardar en Micro.
+keybind = super+s=esc:OQ
+
+# ⌘K ⌘S: ventana de atajos, como en VS Code (secuencia: ⌘K y después ⌘S).
+# Ghostty espera la segunda tecla sin límite de tiempo; si no es ⌘S, envía
+# las dos al programa. Sustituye a ⌘K (limpiar pantalla).
+keybind = super+k>super+s=esc:?
+
+# ⌘K Z: ampliar o restaurar el panel con el foco, como el modo Zen de VS Code
+# (secuencia: ⌘K y después Z).
+keybind = super+k>z=esc:z
+
+# ⌘K ⌘T: tema de color, como en VS Code (secuencia: ⌘K y después ⌘T).
+keybind = super+k>super+t=esc:t
+
+# ⌘← / ⌘→: inicio / fin de línea (Home / End). Por defecto Ghostty envía
+# Ctrl-A / Ctrl-E, que en Micro son "seleccionar todo" y "línea de comandos".
+keybind = super+arrow_left=csi:H
+keybind = super+arrow_right=csi:F
+
+# Edición, como VS Code: ⌘Z / ⌘⇧Z deshacer / rehacer, ⌘A seleccionar todo,
+# ⌘F buscar, ⌘X cortar. Llegan al plugin vkterm, que las pasa a Micro solo si
+# el editor tiene el foco: en un shell, Ctrl-Z suspendería el proceso.
+# Sustituyen a las de Ghostty (deshacer cierres, seleccionar y buscar en la
+# pantalla).
+keybind = super+z=esc:u
+keybind = super+shift+z=esc:y
+keybind = super+a=esc:a
+keybind = super+f=esc:s
+keybind = super+x=esc:x
+
+# ⌘C: copia la selección de Ghostty, como siempre, y en el editor la de Micro
+# (sin selección, la línea, como VS Code). Nunca envía Ctrl-C a un shell.
+# ⌘V: el de Ghostty (pegar con bracketed paste).
+keybind = super+c=copy_to_clipboard:mixed
+keybind = chain=esc:c
+
+# Zellij gestiona paneles y pestañas: se desactivan los splits y pestañas de
+# Ghostty para no tener dos gestores superpuestos.
+keybind = super+t=unbind
+keybind = super+d=unbind
+keybind = super+shift+d=unbind
+
+# Tema elegido con ⌘K ⌘T (bin/vkterm-theme). Ghostty carga este archivo al
+# final, así que sustituye al `theme` de arriba; "?": si no existe (no se ha
+# elegido ninguno), se queda Catppuccin Mocha.
+config-file = ?../local/theme.ghostty

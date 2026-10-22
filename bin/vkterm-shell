@@ -1,0 +1,7 @@
+#!/bin/zsh
+# vkTERM — proceso del panel Shell (lo lanza el layout, no se usa a mano).
+#
+# Es el shell del usuario. Va envuelto en un comando propio para que el plugin
+# vkterm reconozca el panel al recolocarlo (override_layout empareja los
+# paneles por su comando). Si el shell termina, Enter lo vuelve a abrir.
+exec ${SHELL:-/bin/zsh}

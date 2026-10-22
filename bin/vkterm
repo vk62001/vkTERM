@@ -1,0 +1,98 @@
+#!/bin/zsh
+# vkTERM — abre (o reanuda) el workspace de Zellij de un proyecto en el
+# terminal actual.
+#
+#   bin/vkterm [--new] [DIRECTORIO] [ARCHIVO]
+#
+#   DIRECTORIO  proyecto; por defecto, el directorio actual.
+#   ARCHIVO     archivo que Micro abre al crear la sesión (relativo al
+#               proyecto). Si se omite, se usa la línea `open=` del archivo
+#               .vkterm del proyecto, si existe.
+#   --new       crea siempre una sesión nueva, sin tocar las existentes.
+#
+# El nombre de la sesión incluye una huella de la configuración de Zellij:
+# mientras la configuración no cambie, el mismo comando reanuda la sesión; si
+# cambia, se crea una sesión nueva en lugar de adjuntarse a una con un layout
+# antiguo. Las sesiones anteriores siguen vivas (zellij list-sessions).
+emulate -L zsh
+setopt err_exit no_unset pipe_fail
+
+vkterm_home=${0:A:h:h}
+new_session=0
+if [[ ${1:-} == --new ]]; then
+  new_session=1
+  shift
+fi
+project=${1:-$PWD}
+open_file=${2:-}
+
+if [[ ! -d $project ]]; then
+  print -u2 "vkterm: no existe el directorio: $project"
+  exit 1
+fi
+project=${project:A}
+
+if [[ -n ${ZELLIJ:-} ]]; then
+  print -u2 "vkterm: ya estás dentro de una sesión de Zellij; ábrelo desde un terminal normal."
+  exit 1
+fi
+
+for tool in zellij micro; do
+  if (( ! $+commands[$tool] )); then
+    print -u2 "vkterm: no se encuentra '$tool' en el PATH (ver scripts/doctor.sh)."
+    exit 1
+  fi
+done
+
+# Plugin vkterm (explorador y controlador): se compila si falta o cambió.
+$vkterm_home/scripts/build-plugins.sh --if-needed
+
+if [[ -z $open_file && -f $project/.vkterm ]]; then
+  while IFS='=' read -r key value; do
+    if [[ $key == open && -f $project/$value ]]; then
+      open_file=$value
+    fi
+  done < $project/.vkterm
+fi
+
+# Nombre corto y estable: el socket de Zellij vive en $TMPDIR y macOS limita
+# la longitud de esas rutas. Primer hash: ruta del proyecto (distingue
+# proyectos con igual nombre). Segundo hash: configuración de Zellij.
+zellij_dir=$vkterm_home/config/zellij
+name=${${project:t}//[^A-Za-z0-9_-]/-}
+project_id=$(print -rn -- $project | md5 | cut -c1-4)
+config_id=$(cat $zellij_dir/config.kdl $zellij_dir/layouts/vkterm.kdl | md5 | cut -c1-4)
+session="vk-${name[1,20]}-$project_id-$config_id"
+if (( new_session )); then
+  session+="-$(date +%H%M%S)"
+fi
+
+# Estado local, fuera de git: el tema elegido (bin/vkterm-theme) y lo que
+# Micro guarda por su cuenta (cursores, copias, historial, `set`). La
+# configuración de Micro de vkTERM se copia en cada arranque.
+state=${VKTERM_STATE_DIR:-$vkterm_home/config/local}
+mkdir -p $state/micro
+cp -R $vkterm_home/config/micro/{settings.json,bindings.json,colorschemes} $state/micro/
+
+# Solo afectan a los procesos de esta sesión (Zellij, Micro y los paneles).
+export VKTERM_HOME=$vkterm_home          # config.kdl localiza el plugin con ella
+export VKTERM_STATE_DIR=$state
+export VKTERM_PROJECT=$project
+export VKTERM_OPEN_FILE=$open_file       # lo lee bin/vkterm-editor
+export EDITOR=micro VISUAL=micro          # git y los agentes abren Micro
+export MICRO_CONFIG_HOME=$state/micro
+path=($vkterm_home/bin $path)             # vkterm-editor, vkterm-shell, vkterm-open, vkterm-theme
+
+if zellij list-sessions --no-formatting 2>/dev/null \
+    | grep -v EXITED | grep -q "^$session "; then
+  exec zellij --config-dir $zellij_dir attach $session
+fi
+
+# Una sesión nueva arranca con el tema de Zellij guardado; config.kdl lleva el
+# predeterminado.
+zellij_theme=$(vkterm-theme value zellij)
+theme_option=()
+[[ -n $zellij_theme ]] && theme_option=(options --theme $zellij_theme)
+
+cd $project
+exec zellij --config-dir $zellij_dir --session $session $theme_option

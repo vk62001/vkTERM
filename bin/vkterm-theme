@@ -1,0 +1,85 @@
+#!/bin/zsh
+# vkTERM — tema de color guardado y su aplicación en vivo (⌘K ⌘T).
+#
+#   vkterm-theme current                          id del tema guardado (vacío: el predeterminado)
+#   vkterm-theme set ID GHOSTTY ZELLIJ MICRO      lo guarda y cambia Ghostty y Micro
+#   vkterm-theme value CLAVE                      zellij o micro del tema guardado
+#
+# Lo usa el plugin vkterm (la tabla de temas está en
+# plugins/vkterm/src/themes.rs); el tema de Zellij lo cambia el propio plugin.
+# El estado vive en config/local (o VKTERM_STATE_DIR), fuera de git:
+#   theme           id, zellij y micro del tema elegido
+#   theme.ghostty   lo incluye config/ghostty/vkterm.ghostty
+emulate -L zsh
+setopt no_unset pipe_fail
+
+vkterm_home=${0:A:h:h}
+state=${VKTERM_STATE_DIR:-$vkterm_home/config/local}
+
+value() {
+  [[ -f $state/theme ]] || return 0
+  sed -n "s/^$1=//p" $state/theme
+}
+
+# Ghostty que muestra esta sesión: se sube por los procesos padre de sus
+# clientes de Zellij. SIGUSR2 le hace releer la configuración. Las demás
+# ventanas de vkTERM cambian al volver a abrirlas.
+reload_ghostty() {
+  [[ -n ${ZELLIJ_SESSION_NAME:-} ]] || return 0
+  local pid comm
+  for pid in $(pgrep -f -- "zellij .*(--session|attach) $ZELLIJ_SESSION_NAME( |\$)"); do
+    while (( pid > 1 )); do
+      comm=$(ps -o comm= -p $pid 2>/dev/null) || break
+      if [[ ${comm:t} == ghostty ]]; then
+        kill -USR2 $pid
+        break
+      fi
+      pid=$(ps -o ppid= -p $pid | tr -d ' ')
+    done
+  done
+}
+
+# El Micro del panel Editor cambia de esquema con su línea de comandos, como
+# en bin/vkterm-open (Esc, pausa, Ctrl-E, comando, Enter).
+set_micro_colorscheme() {
+  [[ -n ${ZELLIJ_SESSION_NAME:-} ]] || return 0
+  local editor id
+  editor=$(zellij action list-panes -a -j 2>/dev/null | jq -r '
+    first(.[] | select(.title == "Editor" and (.is_plugin | not) and (.exited | not))) | .id')
+  [[ -n $editor && $editor != null ]] || return 0
+  id=terminal_$editor
+  zellij action write -p $id 27
+  sleep 0.1
+  zellij action write -p $id 5
+  zellij action write-chars -p $id "set colorscheme $1"
+  zellij action write -p $id 13
+}
+
+case ${1:-} in
+  current)
+    value id
+    ;;
+  value)
+    value ${2:?clave}
+    ;;
+  set)
+    (( $# == 5 )) || { print -u2 "uso: vkterm-theme set ID GHOSTTY ZELLIJ MICRO"; exit 2; }
+    id=$2 ghostty=$3 zellij=$4 micro=$5
+    previous_micro=$(value micro)
+    mkdir -p $state
+    print -l "id=$id" "zellij=$zellij" "micro=$micro" > $state/theme
+    # Los temas propios (config/ghostty/themes) se indican por ruta.
+    if [[ -f $vkterm_home/config/ghostty/themes/$ghostty ]]; then
+      ghostty=$vkterm_home/config/ghostty/themes/$ghostty
+    fi
+    print -r -- "theme = $ghostty" > $state/theme.ghostty
+    reload_ghostty
+    if [[ $micro != ${previous_micro:-vkterm} ]]; then
+      set_micro_colorscheme $micro
+    fi
+    ;;
+  *)
+    print -u2 "uso: vkterm-theme current | set ID GHOSTTY ZELLIJ MICRO | value CLAVE"
+    exit 2
+    ;;
+esac

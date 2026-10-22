@@ -1,0 +1,97 @@
+#!/bin/zsh
+# vkTERM — abre un archivo en una pestaña del Micro del panel Editor (o salta a
+# su pestaña si ya está abierto) y le da el foco.
+#
+# Lo usan:
+#   - el explorador (plugin vkterm), en segundo plano, con ZELLIJ_SESSION_NAME
+#     y, para abrir sin quitar el foco al explorador, VKTERM_NO_FOCUS=1;
+#   - Zellij (`scrollback_editor` en config/zellij/config.kdl) con
+#     `zellij edit` y al editar el scrollback: lo ejecuta en un panel temporal,
+#     que se cierra solo cuando el script termina.
+#
+# Micro no tiene una API externa: se le escriben comandos de su línea de
+# comandos (Ctrl-E) con `zellij action` y se lee su barra de estado con
+# `dump-screen`. Si no hay un panel Editor, se abre Micro en el propio panel,
+# como hacía Zellij.
+emulate -L zsh
+setopt no_unset pipe_fail extended_glob
+
+(( $# )) || exec micro
+file=${@[-1]:A}
+panes=$(zellij action list-panes -a -j 2>/dev/null)
+
+if [[ -d $file ]] || [[ -s $file && $(file -b --mime-encoding -- $file) == binary ]]; then
+  print -r -- "vkTERM: ${file:t} no es un archivo de texto; no se abre en el editor."
+  read -s -k 1 -t 5
+  exit 0
+fi
+
+# Panel Editor del layout, como "<id><TAB><exited><TAB><cwd>".
+editor=$(jq -r '
+  first(.[] | select(.title == "Editor" and (.is_plugin | not)))
+  | "\(.id)\t\(.exited)\t\(.pane_cwd // "")"' <<< $panes)
+[[ -n $editor ]] || exec micro "$@"
+fields=("${(@ps:\t:)editor}")
+id=terminal_$fields[1]
+cwd=${fields[3]:-${VKTERM_PROJECT:-$PWD}}
+
+# Sin VKTERM_NO_FOCUS, el foco pasa al editor. Zellij devuelve error si ya lo
+# tenía; no es un fallo.
+focus() {
+  [[ -n ${VKTERM_NO_FOCUS:-} ]] || zellij action focus-pane-id $1 2>/dev/null || true
+}
+
+# Micro nombra las pestañas con la ruta tal como se abrió: relativa a su
+# directorio, igual que el archivo inicial de bin/vkterm-editor.
+name=$file
+if [[ $file == $cwd/* ]]; then
+  name=${file#$cwd/}
+fi
+
+# Si se cerró Micro (el panel muestra EXITED), se sustituye el panel por un
+# Micro nuevo con el archivo, en el mismo sitio y con el mismo nombre.
+if [[ $fields[2] == true ]]; then
+  new=$(zellij action new-pane --in-place --close-replaced-pane --pane-id $id \
+          --name Editor --cwd $cwd -- micro $name)
+  focus ${new:-$id}
+  exit 0
+fi
+
+micro_command() {
+  zellij action write -p $id 27   # Esc: cierra cualquier diálogo abierto en Micro
+  sleep 0.1                       # Esc seguido de Ctrl-E se leería como Alt-Ctrl-E
+  zellij action write -p $id 5    # Ctrl-E: línea de comandos de Micro
+  zellij action write-chars -p $id "$1"
+  zellij action write -p $id 13
+}
+
+# Si el archivo ya tiene pestaña, `tabswitch` salta a ella y la barra de estado
+# empieza por su nombre (o es un prefijo suyo, si el nombre no cabe en el
+# panel). Si no, Micro escribe un error justo debajo de la barra de estado.
+# Se recorre la pantalla de arriba abajo: si el panel se ha encogido,
+# dump-screen devuelve debajo filas antiguas.
+micro_command "tabswitch ${(qq)name}"
+found=0 current=
+for _ in {1..20}; do
+  lines=("${(@f)$(zellij action dump-screen -p $id 2>/dev/null)}")
+  for (( i = 1; i <= $#lines; i++ )); do
+    line=${lines[i]}
+    if [[ $line == "Could not find tab"* ]]; then
+      current=${lines[i-1]:-}
+      break 2
+    elif [[ $line == "$name "* || ( ${#line} -ge 20 && $name == "$line"* ) ]]; then
+      found=1
+      break 2
+    fi
+  done
+  sleep 0.1
+done
+
+if (( ! found )); then
+  if [[ $current == "No name ("* ]]; then
+    micro_command "open ${(qq)name}"   # sustituye el búfer vacío sin cambios
+  else
+    micro_command "tab ${(qq)name}"
+  fi
+fi
+focus $id

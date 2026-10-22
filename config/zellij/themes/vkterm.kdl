@@ -1,0 +1,36 @@
+// vkTERM — temas de Zellij para Dark Modern y Light Modern de VS Code
+// (⌘K ⌘T, plugins/vkterm/src/themes.rs). Zellij carga los archivos de este
+// directorio al arrancar.
+//
+// Formato de paleta: Zellij lo trata siempre como oscuro y usa `white` para
+// el texto y `black` para el fondo de las barras; `green` es el color de
+// acento (marco del panel con el foco, pestaña activa, carpetas del
+// explorador). En Light Modern, `white` y `black` van invertidos.
+themes {
+    vkterm-dark-modern {
+        fg "#cccccc"
+        bg "#37373d"
+        black "#181818"
+        white "#cccccc"
+        red "#f14c4c"
+        green "#0078d4"
+        yellow "#cca700"
+        blue "#3794ff"
+        magenta "#d670d6"
+        cyan "#29b8db"
+        orange "#e5a845"
+    }
+    vkterm-light-modern {
+        fg "#616161"
+        bg "#e4e6f1"
+        black "#f8f8f8"
+        white "#3b3b3b"
+        red "#cd3131"
+        green "#005fb8"
+        yellow "#bf8803"
+        blue "#0451a5"
+        magenta "#bc05bc"
+        cyan "#0598bc"
+        orange "#c4652a"
+    }
+}

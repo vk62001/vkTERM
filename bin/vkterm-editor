@@ -1,0 +1,20 @@
+#!/bin/zsh
+# vkTERM — proceso del panel Editor (lo lanza el layout, no se usa a mano).
+#
+# La primera vez en cada sesión abre en Micro el archivo inicial del proyecto,
+# VKTERM_OPEN_FILE, que fija bin/vkterm. Si Micro se cierra (⌘W en la última
+# pestaña), el plugin vkterm vuelve a lanzar este script y Micro arranca vacío,
+# como el editor de VS Code sin pestañas. La marca usa el PID del servidor de
+# Zellij ($PPID), así que una sesión nueva con el mismo nombre vuelve a abrir
+# el archivo inicial.
+#
+# El esquema de colores sale del tema elegido (bin/vkterm-theme, ⌘K ⌘T).
+colorscheme=$(vkterm-theme value micro)
+micro_flags=()
+[[ -n $colorscheme ]] && micro_flags=(-colorscheme $colorscheme)
+marker=${TMPDIR:-/tmp}/vkterm-editor-${ZELLIJ_SESSION_NAME:-none}-$PPID
+if [[ -n ${VKTERM_OPEN_FILE:-} && ! -e $marker ]]; then
+  : > $marker
+  exec micro $micro_flags "$VKTERM_OPEN_FILE"
+fi
+exec micro $micro_flags

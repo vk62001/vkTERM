@@ -1,0 +1,45 @@
+#!/bin/zsh
+# vkTERM — abre el workspace de un proyecto en una ventana nueva de Ghostty
+# con el perfil config/ghostty/vkterm.ghostty (sin cargar ~/.config/ghostty).
+#
+#   bin/vkterm-ghostty [--new] [DIRECTORIO] [ARCHIVO]
+#
+# Mismos argumentos que bin/vkterm. Ghostty arranca los comandos con un PATH
+# mínimo, por eso bin/vkterm se ejecuta a través de un zsh de login (carga
+# ~/.zprofile y similares).
+#
+# Los argumentos viajan por entorno y no por argv: AppKit trata las rutas
+# sueltas de argv como archivos a abrir y Ghostty pediría permiso para
+# "ejecutar" bin/vkterm en una segunda ventana.
+emulate -L zsh
+setopt err_exit no_unset pipe_fail
+
+vkterm_home=${0:A:h:h}
+new_flag=
+if [[ ${1:-} == --new ]]; then
+  new_flag=--new
+  shift
+fi
+project=${1:-$PWD}
+open_file=${2:-}
+ghostty_app=${VKTERM_GHOSTTY_APP:-/Applications/Ghostty.app}
+
+if [[ ! -d $project ]]; then
+  print -u2 "vkterm-ghostty: no existe el directorio: $project"
+  exit 1
+fi
+if [[ ! -d $ghostty_app ]]; then
+  print -u2 "vkterm-ghostty: no se encuentra Ghostty en $ghostty_app (VKTERM_GHOSTTY_APP)."
+  exit 1
+fi
+
+exec open -na "$ghostty_app" \
+  --env "VKTERM_LAUNCHER=$vkterm_home/bin/vkterm" \
+  --env "VKTERM_LAUNCH_NEW=$new_flag" \
+  --env "VKTERM_LAUNCH_DIR=${project:A}" \
+  --env "VKTERM_LAUNCH_FILE=$open_file" \
+  --env "VKTERM_STATE_DIR=${VKTERM_STATE_DIR:-}" \
+  --args \
+  --config-default-files=false \
+  --config-file="$vkterm_home/config/ghostty/vkterm.ghostty" \
+  -e /bin/zsh -lc 'exec "$VKTERM_LAUNCHER" ${=VKTERM_LAUNCH_NEW} "$VKTERM_LAUNCH_DIR" ${VKTERM_LAUNCH_FILE:+"$VKTERM_LAUNCH_FILE"}'
