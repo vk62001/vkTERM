@@ -13,7 +13,7 @@
 //! Con `mode "shortcuts"` en la configuración es, en cambio, la ventana de
 //! atajos (src/overlay.rs); con `mode "themes"`, el selector de tema
 //! (src/picker.rs); con `mode "palette"`, la paleta de archivos y comandos
-//! (src/palette.rs).
+//! (src/palette.rs). Con otro `mode`, se cierra.
 mod floating;
 mod overlay;
 mod palette;
@@ -93,6 +93,8 @@ enum Window {
     Shortcuts(Overlay),
     Themes(Picker),
     Palette(Palette),
+    /// `mode` desconocido: se cierra sin hacer nada.
+    Closed,
 }
 
 register_plugin!(State);
@@ -118,7 +120,15 @@ impl ZellijPlugin for State {
                 self.window = Some(Window::Palette(palette));
                 return;
             }
-            _ => {}
+            // Una ventana que esta versión no conoce (un atajo de una
+            // configuración más nueva): sin esto sería un segundo explorador
+            // y controlador.
+            Some(_) => {
+                self.window = Some(Window::Closed);
+                close_self();
+                return;
+            }
+            None => {}
         }
         let color = |key: &str| configuration.get(key).and_then(|value| rgb(value));
         self.colors_override = color("inactive_fg").zip(color("inactive_bg"));
@@ -148,6 +158,7 @@ impl ZellijPlugin for State {
             Some(Window::Shortcuts(overlay)) => return overlay.update(event),
             Some(Window::Themes(picker)) => return picker.update(event),
             Some(Window::Palette(palette)) => return palette.update(event),
+            Some(Window::Closed) => return false,
             None => {}
         }
         match event {
@@ -212,6 +223,7 @@ impl ZellijPlugin for State {
             Some(Window::Shortcuts(overlay)) => return overlay.pipe(message),
             Some(Window::Themes(picker)) => return picker.pipe(message),
             Some(Window::Palette(palette)) => return palette.pipe(message),
+            Some(Window::Closed) => return false,
             None => {}
         }
         let payload = message.payload.unwrap_or_default();
@@ -234,6 +246,7 @@ impl ZellijPlugin for State {
             Some(Window::Shortcuts(overlay)) => return overlay.render(rows, cols),
             Some(Window::Themes(picker)) => return picker.render(rows, cols),
             Some(Window::Palette(palette)) => return palette.render(rows, cols),
+            Some(Window::Closed) => return,
             None => {}
         }
         self.rows = rows;

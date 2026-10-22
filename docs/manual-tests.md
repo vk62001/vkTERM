@@ -65,6 +65,7 @@ marco resaltado.
 | C6 | ⌘W hasta cerrar la última pestaña | El editor queda vacío (`No name`) y sigue disponible. |
 | C7 | ⌘P, escribir `app` y Enter | Ventana «Abrir archivo» centrada; `src/App.tsx` queda el primero; se abre en una pestaña. Repetir con el archivo ya abierto salta a su pestaña. |
 | C8 | ⌘⇧P, escribir `tema` y Enter | Ventana «Paleta de comandos»; «Preferencias: Tema de color» abre el selector de tema. ⌘⇧P dos veces la cierra; ⌘P sobre ella cambia a archivos. |
+| C9 | Cambiar un archivo sin guardar, abrir otro con ⌘P, escribir algo, pulsar **Ctrl q** (no ⌘W) y responder `n` | La pestaña se cierra sin guardar y la `n` **no** aparece en el otro archivo. Con teclas sintetizadas Ghostty a veces duplica la tecla que sigue a Ctrl q; falta saber si pasa con el teclado físico. |
 
 ## D. Terminales: mostrar y ocultar
 

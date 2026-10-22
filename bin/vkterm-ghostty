@@ -33,6 +33,11 @@ if [[ ! -d $ghostty_app ]]; then
   exit 1
 fi
 
+# `open` pasa todo su entorno a Ghostty, y Ghostty a bin/vkterm. Desde un panel
+# de Zellij (`vkterm .` en el Shell de vkTERM) llevaría las variables de esa
+# sesión y bin/vkterm creería estar dentro de Zellij.
+unset ZELLIJ ZELLIJ_SESSION_NAME ZELLIJ_PANE_ID
+
 exec open -na "$ghostty_app" \
   --env "VKTERM_LAUNCHER=$vkterm_home/bin/vkterm" \
   --env "VKTERM_LAUNCH_NEW=$new_flag" \

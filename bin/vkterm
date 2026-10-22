@@ -56,15 +56,16 @@ if [[ -z $open_file && -f $project/.vkterm ]]; then
 fi
 
 # Nombre corto y estable: vk-<proyecto>-<huella>. La huella (6 hex) mezcla la
-# ruta del proyecto (distingue proyectos con igual nombre) y la configuración
-# de Zellij (si cambia, sesión nueva). Con --new se añade un sufijo aleatorio.
+# ruta del proyecto (distingue proyectos con igual nombre) y todos los archivos
+# de config/zellij (si cambian, sesión nueva). Con --new se añade un sufijo
+# aleatorio.
 #
 # El socket de Zellij vive en $TMPDIR/zellij-<uid>/contract_version_N/<sesión>
 # y macOS limita esa ruta a 103 bytes: en un Mac típico quedan 24 para el
 # nombre. Se calcula el presupuesto real y se recorta el nombre del proyecto.
 zellij_dir=$vkterm_home/config/zellij
 name=${${project:t}//[^A-Za-z0-9_-]/-}
-fingerprint=$( { print -rn -- $project; cat $zellij_dir/config.kdl $zellij_dir/layouts/vkterm.kdl; } | md5 | cut -c1-6)
+fingerprint=$( { print -rn -- $project; cat $zellij_dir/**/*(.on); } | md5 | cut -c1-6)
 suffix=
 if (( new_session )); then
   suffix="-$(printf %04x $(( RANDOM % 65536 )))"
@@ -89,6 +90,22 @@ state=${VKTERM_STATE_DIR:-$vkterm_home/config/local}
 mkdir -p $state/micro
 cp -R $vkterm_home/config/micro/{settings.json,bindings.json,colorschemes} $state/micro/
 
+# Configuración de Zellij de la sesión: una copia por huella, que no cambia.
+# Zellij recarga config.kdl en caliente, pero el plugin de una sesión es el
+# de la versión con la que arrancó: con la carpeta del repositorio, al
+# actualizar vkTERM una sesión abierta recibía atajos que su plugin no
+# conocía (⌘P abrió un segundo explorador). Se borran las copias de sesiones
+# que ya no existen.
+session_config=$state/zellij/$fingerprint
+if [[ ! -f $session_config/config.kdl ]]; then
+  mkdir -p $session_config
+  cp -R $zellij_dir/ $session_config/
+fi
+live=$(zellij list-sessions --no-formatting 2>/dev/null | awk '{print $1}' || true)
+for dir in $state/zellij/*(N/); do
+  [[ ${dir:t} == $fingerprint || $live == *-${dir:t}* ]] || rm -rf $dir
+done
+
 # Solo afectan a los procesos de esta sesión (Zellij, Micro y los paneles).
 export VKTERM_HOME=$vkterm_home          # config.kdl localiza el plugin con ella
 export VKTERM_STATE_DIR=$state
@@ -100,7 +117,7 @@ path=($vkterm_home/bin $path)             # vkterm-editor, vkterm-shell, vkterm-
 
 if zellij list-sessions --no-formatting 2>/dev/null \
     | grep -v EXITED | grep -q "^$session "; then
-  exec zellij --config-dir $zellij_dir attach $session
+  exec zellij --config-dir $session_config attach $session
 fi
 
 # Una sesión nueva arranca con el tema de Zellij guardado; config.kdl lleva el
@@ -110,4 +127,4 @@ theme_option=()
 [[ -n $zellij_theme ]] && theme_option=(options --theme $zellij_theme)
 
 cd $project
-exec zellij --config-dir $zellij_dir --session $session $theme_option
+exec zellij --config-dir $session_config --session $session $theme_option

@@ -459,6 +459,7 @@ def scenario_pty(cmd, tmp):
     try:
         print("Workspace")
         if check_workspace(s):
+            versions_pty(s, client)
             keyboard_pty(s, client, cmd)
             editor_pty(s, client, cmd, project)
             explorer_pty(s, client, cmd, project)
@@ -472,6 +473,26 @@ def scenario_pty(cmd, tmp):
     finally:
         for created in sessions() - before:
             run("zellij", "kill-session", created)
+
+
+def versions_pty(s, client):
+    """Una sesión no recibe la configuración ni las ventanas de otra versión."""
+    args = run("ps", "-o", "command=", "-p", str(client.pid)).split()
+    config = Path(args[args.index("--config-dir") + 1]) if "--config-dir" in args else None
+    repo = ROOT / "config" / "zellij"
+    same = config and all((config / f.relative_to(repo)).read_bytes() == f.read_bytes()
+                          for f in repo.rglob("*") if f.is_file())
+    check("la sesión usa su propia copia de la configuración de Zellij (no la del repositorio)",
+          bool(same) and config.parent.name == "zellij" and config != repo, str(config))
+    before = len(s.panes())
+    # La CLI no resuelve el alias de config.kdl.
+    url = "file:" + str(ROOT / "plugins" / "vkterm" / "target" / "wasm32-wasip1" / "release" / "vkterm.wasm")
+    launched = s.action("launch-plugin", "--floating", "--configuration", "mode=desconocido", url).strip()
+    time.sleep(2.0)
+    check("una ventana con un mode desconocido se cierra (no es un segundo explorador)",
+          launched.startswith("plugin_")
+          and wait_until(lambda: len(s.panes()) == before and not any(p["is_floating"] for p in s.panes())),
+          launched or "no se lanzó", s)
 
 
 def click(client, pane, line):
@@ -1000,8 +1021,11 @@ def scenario_ghostty(tmp):
                    check=True, capture_output=True)
     project = new_project(tmp, "ghostty")
     before, ghostty_before = sessions(), set(run("pgrep", "-x", "ghostty").split())
+    # Como `vkterm .` desde el Shell de otra ventana de vkTERM: con las
+    # variables de una sesión de Zellij en el entorno.
     subprocess.run([str(ROOT / "bin" / "vkterm-ghostty"), "--new", str(project)], check=True,
-                   env=dict(os.environ, VKTERM_STATE_DIR=str(tmp / "ghostty-state")))
+                   env=dict(os.environ, VKTERM_STATE_DIR=str(tmp / "ghostty-state"),
+                            ZELLIJ="0", ZELLIJ_SESSION_NAME="vk-otra-sesion", ZELLIJ_PANE_ID="5"))
     pid = wait_until(lambda: int(next(iter(set(run("pgrep", "-x", "ghostty").split())
                                            - ghostty_before))), timeout=10)
     name = wait_new_session(before, timeout=30)
@@ -1087,9 +1111,12 @@ def keyboard_ghostty(s, keys, project, pid):
         check("⌘V pega el portapapeles en Micro",
               wait_until(lambda: micro_status(s).startswith("No name +") and sample in s.screen("Editor"),
                          timeout=4), "contenido no mostrado")
-        keys.send("ctrl+q", pause=0.6)
-        # Solo si Micro pregunta: si la pestaña no cambió, Ctrl-Q ya la cerró y
-        # la "n" se escribiría en Header.tsx.
+        # Se cierra con ⌘W, como en VS Code. Con Ctrl-Q sintetizado, Ghostty
+        # duplica a veces la tecla siguiente y la "n" de la respuesta acababa
+        # también en Header.tsx (manual-tests.md, C9).
+        keys.send("cmd+w", pause=0.6)
+        # Solo si Micro pregunta: si la pestaña no cambió, ⌘W ya la cerró y la
+        # "n" se escribiría en Header.tsx.
         if wait_until(lambda: "Save changes" in s.screen("Editor"), timeout=3):
             keys.send("text:n", pause=0.8)
         # "+" tras el nombre: Header.tsx modificado.

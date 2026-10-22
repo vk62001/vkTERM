@@ -10,7 +10,7 @@ hace de explorador y de controlador del workspace.
 Ghostty (perfil config/ghostty/vkterm.ghostty: capa ⌘, ⌥ = caracteres)
  └─ /usr/bin/login → zsh -l                       PATH completo del usuario
      └─ bin/vkterm [--new] <proyecto> [archivo]    compila el plugin si hace falta; sesión por proyecto
-         └─ zellij client ⇄ zellij server          --config-dir config/zellij
+         └─ zellij client ⇄ zellij server          --config-dir config/local/zellij/<huella>
              ├─ Explorador 20%     plugin vkterm (plugins/vkterm): árbol + controlador
              ├─ Editor             bin/vkterm-editor → micro (pestañas)
              ├─ Shell (abajo 30%)  bin/vkterm-shell → $SHELL
@@ -223,6 +223,9 @@ Detalle, verificación y conflictos en [keybindings.md](keybindings.md).
    de Ghostty con `open -na`, el perfil del proyecto y
    `--config-default-files=false`. Los argumentos viajan como variables de
    entorno: si fueran argumentos, AppKit los trataría como archivos a abrir.
+   `open` pasa además todo su entorno a Ghostty. Por eso se quitan antes
+   `ZELLIJ`, `ZELLIJ_SESSION_NAME` y `ZELLIJ_PANE_ID`: con `vkterm .` desde
+   un panel de vkTERM, `bin/vkterm` creería estar dentro de Zellij.
 2. Ghostty ejecuta `bin/vkterm` a través de `/bin/zsh -lc`, porque arranca los
    comandos con el PATH mínimo de launchd.
 3. **`bin/vkterm`**:
@@ -230,32 +233,46 @@ Detalle, verificación y conflictos en [keybindings.md](keybindings.md).
    - Compila el plugin si falta o hay fuentes más nuevas
      (`scripts/build-plugins.sh --if-needed`).
    - Elige el archivo inicial (argumento o `open=` en `.vkterm`).
-   - Calcula el nombre de la sesión, `vk-<carpeta>-<huella>` (6 hex de ruta +
-     configuración), recortando la carpeta para que la ruta del socket de
+   - Calcula el nombre de la sesión, `vk-<carpeta>-<huella>` (6 hex de la
+     ruta y de todos los archivos de `config/zellij`), recortando la carpeta para que la ruta del socket de
      Zellij no pase de 103 bytes (límite de macOS).
      `--new` añade un sufijo aleatorio.
    - Prepara el estado local, `config/local/` (o `VKTERM_STATE_DIR`): copia la
      configuración de Micro de `config/micro/` a `config/local/micro/`, donde
      Micro guarda además cursores, copias e historial.
+   - Copia `config/zellij` a `config/local/zellij/<huella>/` si no existe, y
+     borra las copias de sesiones que ya no existen. La sesión usa siempre
+     esa copia (ver "Copia de la configuración por sesión").
    - Exporta `VKTERM_HOME`, que `config.kdl` usa para localizar el `.wasm`
      (Zellij expande variables en la ruta del plugin). Exporta también
      `VKTERM_STATE_DIR`, `VKTERM_PROJECT`, `VKTERM_OPEN_FILE`,
      `EDITOR` / `VISUAL=micro` y `MICRO_CONFIG_HOME`, y añade `bin/` al PATH.
    - Si la sesión existe, se adjunta a ella. Si no, la crea en el proyecto con
      el tema de Zellij guardado (`options --theme`).
-4. Zellij carga `config/zellij/config.kdl`:
+4. Zellij carga `config.kdl` de esa copia:
    - modo locked, tema y atajos;
    - alias `plugins { vkterm … }`;
    - `scrollback_editor "vkterm-open"`.
 
-   Después carga `config/zellij/layouts/vkterm.kdl`.
+   Después carga `layouts/vkterm.kdl`.
+
+**Copia de la configuración por sesión.** Zellij recarga `config.kdl` en
+caliente, pero el plugin de una sesión sigue siendo el de la versión con la que
+arrancó. Con la carpeta del repositorio, al actualizar vkTERM las sesiones
+abiertas recibían atajos que su plugin no conocía: ⌘P abrió con el plugin
+antiguo un segundo explorador flotante. Con la copia, cada sesión conserva la
+configuración con la que se creó, y una configuración nueva crea otra sesión.
+Además, el plugin se cierra si le llega un `mode` que no conoce.
+
+No se copia el `.wasm`: Zellij guarda los permisos concedidos por ruta del
+plugin y volvería a preguntarlos en cada sesión.
 
 ## Aislamiento respecto a la configuración del usuario
 
 | Componente | Mecanismo | Qué no se toca |
 |---|---|---|
 | Ghostty | `--config-default-files=false` + `--config-file` | `~/.config/ghostty` |
-| Zellij | `--config-dir config/zellij` | `~/.config/zellij` |
+| Zellij | `--config-dir config/local/zellij/<huella>` (copia de `config/zellij`) | `~/.config/zellij` |
 | Micro | `MICRO_CONFIG_HOME=config/local/micro` (copia de `config/micro`) | `~/.config/micro` |
 | Shell | Solo hereda variables; no se modifica ningún rc | `~/.zshrc`, `~/.zprofile` |
 
@@ -268,9 +285,9 @@ permiten moverlo:
 - `bin/vkterm-editor`: una marca vacía por sesión en `$TMPDIR`.
 - Cargo: caché de crates en `~/.cargo/registry` (descargadas de crates.io).
 - Dentro del repositorio, ignorados por git: `plugins/vkterm/target/` y el
-  estado local, `config/local/` (tema elegido y datos de Micro). Las versiones
-  anteriores guardaban el estado de Micro en `config/micro/buffers/` y
-  `backups/`, también ignorados.
+  estado local, `config/local/` (tema elegido, datos de Micro y copias de la
+  configuración de Zellij por sesión). Las versiones anteriores guardaban el
+  estado de Micro en `config/micro/buffers/` y `backups/`, también ignorados.
 
 ## Decisiones de diseño
 
@@ -293,6 +310,7 @@ permiten moverlo:
 | Los dos ⌥ escriben caracteres | Como en VS Code y cualquier app de macOS: ⌥2 = @ con cualquiera de los dos (el usuario lo hace con el derecho, como AltGr en Windows). Todo lo de vkTERM se alcanza con ⌘. |
 | Agentes con `start_suspended` | Paneles visibles y preparados, sin lanzar agentes sin consentimiento. |
 | Hash de configuración en el nombre de la sesión | Evita reanudar una sesión con un layout antiguo sin destruirla. |
+| Copia de la configuración de Zellij por sesión | Zellij recarga `config.kdl` en caliente, pero el plugin de una sesión es el de su versión: atajos nuevos con un plugin viejo abrieron un segundo explorador. |
 | Sin forks de Zellij ni de Ghostty | La API de plugins de Zellij 0.45.1 ha bastado. |
 
 ## Estructura del repositorio
