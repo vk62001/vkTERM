@@ -11,6 +11,20 @@ Este documento recoge lo que falta decidir.
 
 ## 1. Verificar primero (la pantalla estaba bloqueada)
 
+**Hecho el 22-10-2026:** `scripts/smoke-test.py --ghostty` pasa 169/169 (dos
+veces). De paso se corrigieron dos cosas:
+
+- `bin/vkterm` fallaba con proyectos de nombre largo (`session name must be
+  less than 0 characters`): la ruta del socket de Zellij en macOS deja solo
+  24 caracteres para el nombre de sesión. Ahora el nombre es
+  `vk-<carpeta>-<huella>` y se recorta según el presupuesto real.
+- ⌃Tab / ⌃⇧Tab sintetizados solo llegan a Ghostty si su ventana está en
+  primer plano (AppKit los trata como atajos de pestañas de ventana). Con el
+  teclado físico siempre lo está; el test trae la ventana al frente un
+  instante para esa comprobación.
+
+Queda pendiente la lista manual (secciones I, J y F).
+
 Con la pantalla del Mac bloqueada, macOS no crea ventanas nuevas: no se
 pudieron ejecutar las pruebas en Ghostty real del selector de temas ni sacar
 sus capturas. Las pruebas PTY sí se ejecutaron.

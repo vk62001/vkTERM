@@ -10,10 +10,11 @@ Ghostty emite para cada atajo ⌘ (leídos de `ghostty +list-keybinds`). El
 estado se comprueba con `zellij action`, procesos y archivos en disco.
 
 Modo --ghostty: abre vkTERM en una ventana de Ghostty (sin robarle el foco a
-la app activa) y entrega eventos de teclado CGEvent al proceso de Ghostty con
-scripts/send-keys.swift. Recorren Ghostty → Zellij → aplicación, pero NO son
-pulsaciones físicas: la lista manual está en docs/manual-tests.md. Requiere
-permiso de Accesibilidad para el terminal que ejecuta la prueba.
+la app activa, salvo un instante para ⌃Tab / ⌃⇧Tab: AppKit solo los entrega
+a la ventana principal) y entrega eventos de teclado CGEvent al proceso de
+Ghostty con scripts/send-keys.swift. Recorren Ghostty → Zellij → aplicación,
+pero NO son pulsaciones físicas: la lista manual está en docs/manual-tests.md.
+Requiere permiso de Accesibilidad para el terminal que ejecuta la prueba.
 
 Nunca ejecuta Claude Code ni Codex, no modifica el portapapeles y no toca las
 sesiones de Zellij que ya existían. Si Zellij pide permisos para el plugin
@@ -170,6 +171,19 @@ def wait_until(fn, timeout=6.0, interval=0.2):
 
 def run(*argv, **kwargs):
     return subprocess.run(argv, capture_output=True, text=True, timeout=30, **kwargs).stdout
+
+
+def frontmost_pid():
+    """PID de la app en primer plano (vacío si no se puede saber)."""
+    return run("osascript", "-e",
+               'tell application "System Events" to get unix id of first application process '
+               'whose frontmost is true').strip()
+
+
+def bring_to_front(pid):
+    run("osascript", "-e",
+        'tell application "System Events" to set frontmost of '
+        '(first application process whose unix id is %s) to true' % pid)
 
 
 def sessions():
@@ -1064,12 +1078,22 @@ def keyboard_ghostty(s, keys, project, pid):
     previous = wait_until(lambda: micro_status(s).startswith(DEMO_FILE + " "), timeout=3)
     keys.send("cmd+ropt+right", pause=0.6)
     following = wait_until(lambda: micro_status(s).startswith("src/App.tsx "), timeout=3)
+    # ⌃Tab y ⌃⇧Tab son atajos de AppKit (pestañas de la ventana): solo llegan
+    # al keybind de Ghostty si su ventana es la principal, cosa que con el
+    # teclado físico siempre ocurre. Se trae Ghostty al frente solo para esta
+    # comprobación y se devuelve el foco a la app que lo tenía.
+    front = frontmost_pid()
+    bring_to_front(pid)
+    time.sleep(0.8)
     keys.send("ctrl+tab", pause=0.6)
     tab = wait_until(lambda: micro_status(s).startswith(DEMO_FILE + " "), timeout=3)
     keys.send("ctrl+shift+tab", pause=0.6)
+    shift_tab = wait_until(lambda: micro_status(s).startswith("src/App.tsx "), timeout=3)
+    if front and front != str(pid):
+        bring_to_front(front)
     check("⌘⌥← / ⌘⌥→ y ⌃Tab / ⌃⇧Tab cambian de pestaña",
-          previous and following and tab
-          and wait_until(lambda: micro_status(s).startswith("src/App.tsx "), timeout=3))
+          previous and following and tab and shift_tab,
+          f"⌘⌥←={previous} ⌘⌥→={following} ⌃Tab={tab} ⌃⇧Tab={shift_tab}: {micro_status(s)[:40]}")
     keys.send("cmd+lopt+left", pause=0.6)
     wait_until(lambda: micro_status(s).startswith(DEMO_FILE + " "), timeout=3)
 

@@ -227,8 +227,10 @@ Detalle, verificación y conflictos en [keybindings.md](keybindings.md).
    - Compila el plugin si falta o hay fuentes más nuevas
      (`scripts/build-plugins.sh --if-needed`).
    - Elige el archivo inicial (argumento o `open=` en `.vkterm`).
-   - Calcula el nombre de la sesión, `vk-<carpeta>-<hash ruta>-<hash config>`.
-     `--new` añade la hora.
+   - Calcula el nombre de la sesión, `vk-<carpeta>-<huella>` (6 hex de ruta +
+     configuración), recortando la carpeta para que la ruta del socket de
+     Zellij no pase de 103 bytes (límite de macOS).
+     `--new` añade un sufijo aleatorio.
    - Prepara el estado local, `config/local/` (o `VKTERM_STATE_DIR`): copia la
      configuración de Micro de `config/micro/` a `config/local/micro/`, donde
      Micro guarda además cursores, copias e historial.

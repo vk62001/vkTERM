@@ -11,7 +11,7 @@ explorador de archivos, editor con pestañas, Shell y agentes de IA
 </p>
 
 <p align="center">
-  <a href="https://github.com/vk62001/vkterm/actions/workflows/ci.yml"><img src="https://github.com/vk62001/vkterm/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/vk62001/vkTERM/actions/workflows/ci.yml"><img src="https://github.com/vk62001/vkTERM/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-GPL--3.0--or--later-blue" alt="GPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/plataforma-macOS-lightgrey" alt="macOS">
 </p>

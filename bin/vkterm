@@ -55,17 +55,32 @@ if [[ -z $open_file && -f $project/.vkterm ]]; then
   done < $project/.vkterm
 fi
 
-# Nombre corto y estable: el socket de Zellij vive en $TMPDIR y macOS limita
-# la longitud de esas rutas. Primer hash: ruta del proyecto (distingue
-# proyectos con igual nombre). Segundo hash: configuración de Zellij.
+# Nombre corto y estable: vk-<proyecto>-<huella>. La huella (6 hex) mezcla la
+# ruta del proyecto (distingue proyectos con igual nombre) y la configuración
+# de Zellij (si cambia, sesión nueva). Con --new se añade un sufijo aleatorio.
+#
+# El socket de Zellij vive en $TMPDIR/zellij-<uid>/contract_version_N/<sesión>
+# y macOS limita esa ruta a 103 bytes: en un Mac típico quedan 24 para el
+# nombre. Se calcula el presupuesto real y se recorta el nombre del proyecto.
 zellij_dir=$vkterm_home/config/zellij
 name=${${project:t}//[^A-Za-z0-9_-]/-}
-project_id=$(print -rn -- $project | md5 | cut -c1-4)
-config_id=$(cat $zellij_dir/config.kdl $zellij_dir/layouts/vkterm.kdl | md5 | cut -c1-4)
-session="vk-${name[1,20]}-$project_id-$config_id"
+fingerprint=$( { print -rn -- $project; cat $zellij_dir/config.kdl $zellij_dir/layouts/vkterm.kdl; } | md5 | cut -c1-6)
+suffix=
 if (( new_session )); then
-  session+="-$(date +%H%M%S)"
+  suffix="-$(printf %04x $(( RANDOM % 65536 )))"
 fi
+sock_dir=${ZELLIJ_SOCKET_DIR:-${TMPDIR:-/tmp}/zellij-$UID}
+sock_dir=${sock_dir%/}
+contract_dirs=($sock_dir/contract_version_*(N/))
+contract=${${contract_dirs[-1]:-contract_version_1}:t}
+# 104 = límite de macOS (sockaddr_un); el nombre debe dejar la ruta por debajo.
+max_name=$(( 104 - 1 - ${#sock_dir} - 1 - ${#contract} - 1 ))
+max_project=$(( max_name - 3 - 1 - ${#fingerprint} - ${#suffix} ))
+if (( max_project < 1 )); then
+  print -u2 "vkterm: la ruta de sockets de Zellij es demasiado larga ($sock_dir); exporta ZELLIJ_SOCKET_DIR con una ruta corta."
+  exit 1
+fi
+session="vk-${${name[1,$max_project]}%%-#}-${fingerprint}${suffix}"
 
 # Estado local, fuera de git: el tema elegido (bin/vkterm-theme) y lo que
 # Micro guarda por su cuenta (cursores, copias, historial, `set`). La
