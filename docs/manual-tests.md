@@ -78,6 +78,7 @@ marco resaltado.
 | D5 | ⌘B, ⌘J, ⌥⌘B | Solo queda el editor, a pantalla completa. |
 | D6 | ⌘5, ⌘3, ⌘1 | Cada uno vuelve a mostrar su panel y le da el foco. |
 | D7 | En Shell: `sleep 100`, Enter, ⌘J, ⌘J | `sleep` sigue en marcha. |
+| D8 | Captura al portapapeles (⌃⇧⌘4), ⌘3 y ⌘V en Claude Code; repetir en Codex (⌘4) | El agente adjunta la imagen (`[Image #1]` en Claude Code). Con texto en el portapapeles, ⌘V pega solo el texto. |
 
 ## E. Foco (⌘1–⌘5)
 

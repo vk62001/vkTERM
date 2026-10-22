@@ -61,6 +61,7 @@ pub const CATEGORIES: &[Category] = &[
             ("Enter", "Arrancar el agente en espera"),
             ("Esc", "Abrir un shell en lugar del agente"),
             ("⌘C", "Copiar sin interrumpir el proceso"),
+            ("⌘V", "Pegar; en Claude Code y Codex, también una imagen"),
             ("Ctrl c", "Interrumpir el proceso"),
         ],
     },

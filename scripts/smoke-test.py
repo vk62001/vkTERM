@@ -81,7 +81,7 @@ EXPECTED_KEYBINDS = {
     "ctrl+shift+tab": "esc:,", "ctrl+tab": "esc:.",
     "super+alt+arrow_up": "esc:k", "super+alt+arrow_down": "esc:j",
     "super+s": "esc:OQ", "super+arrow_left": "csi:H", "super+arrow_right": "csi:F",
-    "super+c": "copy_to_clipboard:mixed|esc:c", "super+v": "paste_from_clipboard",
+    "super+c": "copy_to_clipboard:mixed|esc:c", "super+v": "paste_from_clipboard|esc:v",
     "super+z": "esc:u", "super+shift+z": "esc:y", "super+a": "esc:a", "super+f": "esc:s",
     "super+x": "esc:x",
 }
@@ -96,7 +96,7 @@ SHORTCUTS = {"⌘1": "super+digit_1", "⌘2": "super+digit_2", "⌘3": "super+di
              "⌘←": "super+arrow_left", "⌘→": "super+arrow_right",
              "⌘K ⌘S": "super+k>super+s", "⌘K Z": "super+k>z", "⌘K ⌘T": "super+k>super+t",
              "⌘Z": "super+z", "⌘⇧Z": "super+shift+z", "⌘A": "super+a", "⌘F": "super+f",
-             "⌘X": "super+x", "⌘C": "super+c"}
+             "⌘X": "super+x", "⌘C": "super+c", "⌘V": "super+v"}
 
 
 def alt(key):

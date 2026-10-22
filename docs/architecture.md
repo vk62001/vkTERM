@@ -49,6 +49,7 @@ instancia del mismo plugin:
 | `src/palette.rs` | La paleta (instancia con `mode "palette"`): ⌘P archivos y ⌘⇧P comandos en la misma ventana; lo elegido va al explorador en un mensaje `palette`, que lo ejecuta al cerrarse la ventana. |
 | `src/fuzzy.rs` | Búsqueda difusa al estilo de VS Code (lógica pura, con tests). |
 | `src/commands.rs` | Comandos de la paleta con su mensaje y atajo (lógica pura, con tests). |
+| `src/clipboard.rs` | ⌘V en Claude Code y Codex: decide, por `clipboard info`, si el portapapeles solo tiene una imagen (lógica pura, con tests). |
 
 ### Explorador
 
@@ -91,6 +92,7 @@ aunque su panel esté oculto.
 | `close_tab` | Ctrl-Q a Micro, solo si el foco está en el editor |
 | `edit` + `undo`/`redo`/`select_all`/`find`/`cut`/`copy` | Ctrl-Z/Y/A/F/X/C a Micro, solo si el foco está en el editor (en un shell suspenderían o interrumpirían el proceso) |
 | `quick_open` | Foco al editor, Ctrl-E y `tab ` |
+| `paste` | Tras el ⌘V de Ghostty: si el foco está en Claude Code o Codex y el portapapeles solo tiene una imagen (`osascript -e 'clipboard info'`, `src/clipboard.rs`), les manda ⌃V, con el que la adjuntan |
 
 **Recolocación.** Zellij no devuelve un panel oculto a su sitio al mostrarlo:
 lo inserta como uno nuevo. Tampoco bastan las *swap layouts*, que eligen por
@@ -212,7 +214,8 @@ Todas las instancias piden los mismos: la caché guarda los últimos pedidos.
 ⌘⌥↑ ↓         esc:k / esc:j        Alt k / j     MoveFocus
 ⌘S            esc:OQ               F2            Micro (Save)
 ⌘← / ⌘→       csi:H / csi:F        Home / End    aplicación
-⌘C / ⌘V       acciones de Ghostty  —             copiar selección de Ghostty / bracketed paste
+⌘C            acción de Ghostty    —             copiar la selección de Ghostty (+ Alt c → edit copy)
+⌘V            acción de Ghostty    —             bracketed paste (+ Alt v → paste: imagen a los agentes)
 ```
 
 Detalle, verificación y conflictos en [keybindings.md](keybindings.md).

@@ -1,7 +1,7 @@
 # vkTERM — Fase 2: lenguajes (LSP), Control de código fuente y extensiones
 
-Estado: **aprobado el 22-10-2026.** Las descargas de H0 siguen pendientes de tu
-visto bueno.
+Estado: **aprobado el 22-10-2026.** P entregado el mismo día. Las descargas de
+H0 siguen pendientes de tu visto bueno.
 
 ## Contexto
 

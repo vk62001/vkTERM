@@ -57,7 +57,7 @@ La columna *Verificado* indica cómo se probó cada atajo:
 | ⌘F | Buscar en el archivo | Alt s → `edit` → Ctrl-F | P, M |
 | ⌘X | Cortar en el editor (sin selección, la línea) | Alt x → `edit` → Ctrl-X (Cut\|CutLine) | P (no actúa en el shell), M |
 | ⌘C | Copiar: la selección de Ghostty y, en el editor, la de Micro (sin selección, la línea). Nunca envía Ctrl-C a un shell. | Acción de Ghostty encadenada con Alt c → `edit` → Ctrl-C (Copy\|CopyLine) | G (no interrumpe procesos), P, M |
-| ⌘V | Pegar | Acción de Ghostty (bracketed paste) | G (Micro), P (Micro y shell), M |
+| ⌘V | Pegar. En Claude Code y Codex, si el portapapeles solo tiene una imagen, la adjunta (como su ⌃V). | Acción de Ghostty (bracketed paste) encadenada con Alt v → `paste`: con el foco en un agente, `osascript -e 'clipboard info'` y, si es solo una imagen, ⌃V a ese panel | G (Micro), P (Micro y shell), M |
 | ⌘← / ⌘→ | Inicio / fin de línea | Home / End | G (Micro), P (Micro y shell), M |
 | ⌘K Z | Ampliar / restaurar el panel con el foco (como el modo Zen de VS Code) | Secuencia de Ghostty → Alt z | G, P |
 | ⌥2, ⌥3, ⌥ + tecla | @, # y el resto de caracteres del teclado, con cualquiera de los dos ⌥ | Carácter de macOS | G (⌥2, ⌥3), M |

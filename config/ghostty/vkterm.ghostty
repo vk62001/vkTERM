@@ -99,9 +99,14 @@ keybind = super+x=esc:x
 
 # ⌘C: copia la selección de Ghostty, como siempre, y en el editor la de Micro
 # (sin selección, la línea, como VS Code). Nunca envía Ctrl-C a un shell.
-# ⌘V: el de Ghostty (pegar con bracketed paste).
 keybind = super+c=copy_to_clipboard:mixed
 keybind = chain=esc:c
+
+# ⌘V: pega el texto, como siempre (bracketed paste). En Claude Code y Codex,
+# si el portapapeles solo tiene una imagen, el plugin vkterm les manda ⌃V, con
+# el que la adjuntan (un terminal no puede pegar imágenes).
+keybind = super+v=paste_from_clipboard
+keybind = chain=esc:v
 
 # Zellij gestiona paneles y pestañas: se desactivan los splits y pestañas de
 # Ghostty para no tener dos gestores superpuestos.

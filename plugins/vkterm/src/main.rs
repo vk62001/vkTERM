@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use overlay::Overlay;
 use palette::Palette;
 use picker::Picker;
+use vkterm::clipboard;
 use vkterm::commands;
 use vkterm::layout::{self, Visible};
 use vkterm::themes;
@@ -206,6 +207,15 @@ impl ZellijPlugin for State {
                 self.set_theme(&String::from_utf8_lossy(&stdout));
                 true
             }
+            Event::RunCommandResult(_, stdout, _, context)
+                if context.get("vkterm").map(String::as_str) == Some("paste") =>
+            {
+                let pane = context.get("pane").and_then(|id| id.parse().ok());
+                if let Some(pane) = pane.filter(|_| clipboard::image_only(&String::from_utf8_lossy(&stdout))) {
+                    write_to_pane_id(vec![0x16], PaneId::Terminal(pane));
+                }
+                false
+            }
             Event::Key(key) => self.handle_key(key),
             Event::Mouse(mouse) => self.handle_mouse(mouse),
             Event::FileSystemCreate(paths)
@@ -325,6 +335,7 @@ impl State {
             "next_tab" => self.send_to_editor(b"\x1b.", true),
             "close_tab" => self.close_tab(),
             "edit" => self.edit(payload.trim()),
+            "paste" => self.paste_image(),
             // De la paleta (src/commands.rs).
             "open" => {
                 self.status = None;
@@ -616,6 +627,23 @@ impl State {
             if self.focused_in(&[editor]) {
                 write_to_pane_id(vec![key], editor);
             }
+        }
+    }
+
+    /// ⌘V: Ghostty ya ha pegado el texto. Si el foco está en Claude Code o
+    /// Codex, se mira qué hay en el portapapeles: si es solo una imagen, el
+    /// agente recibe ⌃V, con el que la adjunta (src/clipboard.rs).
+    fn paste_image(&mut self) {
+        let agent = ["Claude Code", "Codex"]
+            .iter()
+            .filter_map(|title| self.panes.iter().find(|p| !p.is_plugin && p.title == *title))
+            .find(|p| self.has_focus(p));
+        if let Some(agent) = agent {
+            let context = BTreeMap::from([
+                ("vkterm".to_string(), "paste".to_string()),
+                ("pane".to_string(), agent.id.to_string()),
+            ]);
+            run_command(&["osascript", "-e", "clipboard info"], context);
         }
     }
 

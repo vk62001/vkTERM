@@ -7,10 +7,10 @@
 // (default-plugins/configuration/src/presets.rs, v0.45.1) con primary=Ctrl y
 // secondary=Alt. Diferencias respecto al preset:
 //   - En modo locked solo se reservan Alt h/j/k/l, Alt =/-, Alt i/o, Alt z,
-//     Alt 0..9, Alt , / Alt ., Alt ;, Alt ?, Alt t y Alt u/y/a/s/x/c. Alt n/f/p/[/]
+//     Alt 0..9, Alt , / Alt ., Alt ;, Alt ?, Alt t y Alt u/y/a/s/x/c/v. Alt n/f/p/[/]
 //     y Alt+flechas quedan para Micro (multicursor, palabras, diff) y solo
 //     actúan en modo normal (tras Ctrl g).
-//   - Alt z (zoom), Alt 0..9, Alt , / ., Alt ;, Alt ?, Alt t y Alt u/y/a/s/x/c
+//   - Alt z (zoom), Alt 0..9, Alt , / ., Alt ;, Alt ?, Alt t y Alt u/y/a/s/x/c/v
 //     (destinos de la capa ⌘ de Ghostty) son añadidos de vkTERM.
 //   - Se omite la entrada "s" del modo session (zellij:share, servidor web).
 // Detalle y conflictos: docs/keybindings.md
@@ -269,6 +269,8 @@ keybinds clear-defaults=true {
         bind "Alt s" { MessagePlugin "vkterm" { name "edit"; payload "find"; }; }
         bind "Alt x" { MessagePlugin "vkterm" { name "edit"; payload "cut"; }; }
         bind "Alt c" { MessagePlugin "vkterm" { name "edit"; payload "copy"; }; }
+        // ⌘V (tras pegar el texto): imagen del portapapeles a Claude Code o Codex.
+        bind "Alt v" { MessagePlugin "vkterm" { name "paste"; }; }
         // Ventana de atajos: otra instancia del plugin (mode "shortcuts") en
         // un panel flotante; Zellij la lanza si no existe y ella se cierra si ya
         // estaba abierta.
