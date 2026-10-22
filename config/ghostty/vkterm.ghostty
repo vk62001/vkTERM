@@ -61,9 +61,10 @@ keybind = super+w=esc:9
 keybind = super+alt+arrow_up=esc:k
 keybind = super+alt+arrow_down=esc:j
 
-# ⌘P: abrir archivo en una pestaña nueva (línea de comandos de Micro con
-# "tab ", Tab completa rutas).
+# ⌘P: abrir archivo por nombre (búsqueda difusa) y ⌘⇧P: paleta de comandos,
+# como VS Code. Las dos son la misma ventana flotante del plugin vkterm.
 keybind = super+p=esc:0
+keybind = super+shift+p=esc:;
 
 # ⌘S: guardar en Micro.
 keybind = super+s=esc:OQ

@@ -12,9 +12,11 @@
 //!
 //! Con `mode "shortcuts"` en la configuración es, en cambio, la ventana de
 //! atajos (src/overlay.rs); con `mode "themes"`, el selector de tema
-//! (src/picker.rs).
+//! (src/picker.rs); con `mode "palette"`, la paleta de archivos y comandos
+//! (src/palette.rs).
 mod floating;
 mod overlay;
+mod palette;
 mod picker;
 
 use std::collections::BTreeMap;
@@ -22,14 +24,16 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use overlay::Overlay;
+use palette::Palette;
 use picker::Picker;
+use vkterm::commands;
 use vkterm::layout::{self, Visible};
 use vkterm::themes;
 use vkterm::tree::{Action, DirEntry, Tree};
 use zellij_tile::prelude::*;
 
 /// Carpeta del proyecto vista desde el plugin.
-const HOST: &str = "/host";
+pub(crate) const HOST: &str = "/host";
 const HEADER_ROWS: usize = 1;
 const FOOTER_ROWS: usize = 1;
 const HINT: &str = "Enter abrir · Espacio vista previa · ⌘B ocultar";
@@ -80,11 +84,15 @@ struct State {
     asked_theme: bool,
     /// Esta instancia es una ventana flotante en lugar del explorador.
     window: Option<Window>,
+    /// Lo elegido en la paleta, pendiente de que su ventana se cierre y el
+    /// foco vuelva a los paneles fijos: (mensaje, payload).
+    pending: Option<(String, String)>,
 }
 
 enum Window {
     Shortcuts(Overlay),
     Themes(Picker),
+    Palette(Palette),
 }
 
 register_plugin!(State);
@@ -102,6 +110,12 @@ impl ZellijPlugin for State {
                 let mut picker = Picker::default();
                 picker.load();
                 self.window = Some(Window::Themes(picker));
+                return;
+            }
+            Some("palette") => {
+                let mut palette = Palette::default();
+                palette.load();
+                self.window = Some(Window::Palette(palette));
                 return;
             }
             _ => {}
@@ -133,6 +147,7 @@ impl ZellijPlugin for State {
         match &mut self.window {
             Some(Window::Shortcuts(overlay)) => return overlay.update(event),
             Some(Window::Themes(picker)) => return picker.update(event),
+            Some(Window::Palette(palette)) => return palette.update(event),
             None => {}
         }
         match event {
@@ -152,6 +167,11 @@ impl ZellijPlugin for State {
                     self.active_tab = tab.position;
                 }
                 let floating = tabs.iter().any(|t| t.position == self.my_tab && t.are_floating_panes_visible);
+                if !floating {
+                    if let Some((name, payload)) = self.pending.take() {
+                        self.dispatch(&name, &payload);
+                    }
+                }
                 if floating == self.floating_active {
                     return false;
                 }
@@ -191,30 +211,29 @@ impl ZellijPlugin for State {
         match &mut self.window {
             Some(Window::Shortcuts(overlay)) => return overlay.pipe(message),
             Some(Window::Themes(picker)) => return picker.pipe(message),
+            Some(Window::Palette(palette)) => return palette.pipe(message),
             None => {}
         }
         let payload = message.payload.unwrap_or_default();
-        match message.name.as_str() {
-            "toggle_sidebar" => self.toggle(Zone::Sidebar),
-            "toggle_panel" => self.toggle(Zone::Panel),
-            "toggle_agents" => self.toggle(Zone::Agents),
-            "focus" => self.focus(payload.trim()),
-            "prev_tab" => self.send_to_editor(b"\x1b,", true),
-            "next_tab" => self.send_to_editor(b"\x1b.", true),
-            "close_tab" => self.close_tab(),
-            "edit" => self.edit(payload.trim()),
-            "quick_open" => self.quick_open(),
-            // Del selector de tema (src/picker.rs).
-            "set_theme" => self.set_theme(&payload),
-            _ => return false,
+        if message.name == "palette" {
+            // De la paleta (src/palette.rs): se ejecuta cuando su ventana ya
+            // se ha cerrado, para que el foco y los paneles estén en su sitio.
+            let (name, payload) = payload.split_once('\t').unwrap_or((&payload, ""));
+            if self.floating_active {
+                self.pending = Some((name.to_string(), payload.to_string()));
+            } else {
+                self.dispatch(name, payload);
+            }
+            return false;
         }
-        true
+        self.dispatch(&message.name, &payload)
     }
 
     fn render(&mut self, rows: usize, cols: usize) {
         match &mut self.window {
             Some(Window::Shortcuts(overlay)) => return overlay.render(rows, cols),
             Some(Window::Themes(picker)) => return picker.render(rows, cols),
+            Some(Window::Palette(palette)) => return palette.render(rows, cols),
             None => {}
         }
         self.rows = rows;
@@ -282,6 +301,37 @@ impl ZellijPlugin for State {
 }
 
 impl State {
+    /// Los atajos ⌘ (config.kdl) y los comandos de la paleta.
+    fn dispatch(&mut self, name: &str, payload: &str) -> bool {
+        match name {
+            "toggle_sidebar" => self.toggle(Zone::Sidebar),
+            "toggle_panel" => self.toggle(Zone::Panel),
+            "toggle_agents" => self.toggle(Zone::Agents),
+            "focus" => self.focus(payload.trim()),
+            "prev_tab" => self.send_to_editor(b"\x1b,", true),
+            "next_tab" => self.send_to_editor(b"\x1b.", true),
+            "close_tab" => self.close_tab(),
+            "edit" => self.edit(payload.trim()),
+            // De la paleta (src/commands.rs).
+            "open" => {
+                self.status = None;
+                self.open(Path::new(payload.trim()), true);
+            }
+            "editor_key" => {
+                if let Some(bytes) = commands::editor_key(payload.trim()) {
+                    self.send_to_editor(bytes, true);
+                }
+            }
+            "zoom" => toggle_focus_fullscreen(),
+            "toggle_excluded" => self.tree.show_excluded = !self.tree.show_excluded,
+            "open_window" => self.open_window(payload.trim()),
+            // Del selector de tema (src/picker.rs).
+            "set_theme" => self.set_theme(payload),
+            _ => return false,
+        }
+        true
+    }
+
     // ------------------------------------------------------------ explorador
 
     fn list_height(&self) -> usize {
@@ -556,13 +606,20 @@ impl State {
         }
     }
 
-    /// ⌘P: línea de comandos de Micro (Ctrl-E) con "tab " escrito.
-    fn quick_open(&mut self) {
-        if let Some(editor) = self.terminal("Editor") {
-            focus_pane_with_id(editor, false, false);
-            write_to_pane_id(vec![0x05], editor);
-            write_chars_to_pane_id("tab ", editor);
-        }
+    /// Desde la paleta: la ventana de atajos o el selector de tema, otra
+    /// instancia flotante del plugin, como hacen los atajos de config.kdl.
+    fn open_window(&mut self, kind: &str) {
+        let (name, mode) = match kind {
+            "shortcuts" => ("toggle_shortcuts", "shortcuts"),
+            "themes" => ("toggle_themes", "themes"),
+            _ => return,
+        };
+        pipe_message_to_plugin(
+            MessageToPlugin::new(name)
+                .with_plugin_url("vkterm")
+                .with_plugin_config(BTreeMap::from([("mode".to_string(), mode.to_string())]))
+                .new_plugin_instance_should_float(true),
+        );
     }
 
     /// Colores del atenuado para el tema (o los de config.kdl, si los define).
@@ -618,7 +675,7 @@ impl State {
 }
 
 /// Recorta (con "…") o rellena con espacios hasta `width` columnas.
-fn fit(text: &str, width: usize) -> String {
+pub(crate) fn fit(text: &str, width: usize) -> String {
     let count = text.chars().count();
     if count > width {
         let mut cut: String = text.chars().take(width.saturating_sub(1)).collect();

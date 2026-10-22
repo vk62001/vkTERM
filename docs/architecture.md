@@ -46,6 +46,9 @@ instancia del mismo plugin:
 | `src/main.rs` | El plugin: lee el disco (`/host`), dibuja el árbol, atiende teclas y ratón, recibe los atajos (`pipe`) y controla los paneles. |
 | `src/shortcuts.rs` | Contenido y maquetación de la ventana de atajos: categorías, columnas de tres, alineación. Lógica pura con tests. |
 | `src/overlay.rs` | La ventana de atajos (instancia con `mode "shortcuts"`): panel flotante, centrado y cierre. |
+| `src/palette.rs` | La paleta (instancia con `mode "palette"`): ⌘P archivos y ⌘⇧P comandos en la misma ventana; lo elegido va al explorador en un mensaje `palette`, que lo ejecuta al cerrarse la ventana. |
+| `src/fuzzy.rs` | Búsqueda difusa al estilo de VS Code (lógica pura, con tests). |
+| `src/commands.rs` | Comandos de la paleta con su mensaje y atajo (lógica pura, con tests). |
 
 ### Explorador
 

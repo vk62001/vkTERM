@@ -47,6 +47,8 @@ TITLES = ("Explorador", "Editor", "Shell", "Claude Code", "Codex")
 TERMINALS = ("Editor", "Shell", "Claude Code", "Codex")
 SHORTCUTS_TITLE = "Atajos de teclado"
 THEMES_TITLE = "Tema de color"
+FILES_TITLE = "Abrir archivo"
+COMMANDS_TITLE = "Paleta de comandos"
 # Caché de permisos de Zellij (solo se lee) y permisos que pide el plugin.
 PERMISSIONS_CACHE = Path.home() / "Library" / "Caches" / "org.Zellij-Contributors.Zellij" / "permissions.kdl"
 PLUGIN_PERMISSIONS = {"ReadApplicationState", "ChangeApplicationState", "WriteToStdin", "RunCommands",
@@ -72,7 +74,8 @@ EXPECTED_KEYBINDS = {
     "super+1": "esc:1", "super+2": "esc:2", "super+3": "esc:3",
     "super+4": "esc:4", "super+5": "esc:5",
     "super+b": "esc:6", "super+j": "esc:7", "super+alt+b": "esc:8", "super+alt+key_b": "esc:8",
-    "super+w": "esc:9", "super+p": "esc:0", "super+k>super+s": "esc:?", "super+k>z": "esc:z",
+    "super+w": "esc:9", "super+p": "esc:0", "super+shift+p": "esc:;", "super+k>super+s": "esc:?",
+    "super+k>z": "esc:z",
     "super+k>super+t": "esc:t",
     "super+alt+arrow_left": "esc:,", "super+alt+arrow_right": "esc:.",
     "ctrl+shift+tab": "esc:,", "ctrl+tab": "esc:.",
@@ -85,7 +88,8 @@ EXPECTED_KEYBINDS = {
 UNBOUND = ("super+t", "super+d", "super+shift+d")
 SHORTCUTS = {"⌘1": "super+digit_1", "⌘2": "super+digit_2", "⌘3": "super+digit_3",
              "⌘4": "super+digit_4", "⌘5": "super+digit_5", "⌘B": "super+b", "⌘J": "super+j",
-             "⌥⌘B": "super+alt+b", "⌘W": "super+w", "⌘P": "super+p", "⌘S": "super+s",
+             "⌥⌘B": "super+alt+b", "⌘W": "super+w", "⌘P": "super+p", "⌘⇧P": "super+shift+p",
+             "⌘S": "super+s",
              "⌘⌥←": "super+alt+arrow_left", "⌘⌥→": "super+alt+arrow_right",
              "⌃Tab": "ctrl+tab", "⌃⇧Tab": "ctrl+shift+tab",
              "⌘⌥↑": "super+alt+arrow_up", "⌘⌥↓": "super+alt+arrow_down",
@@ -498,10 +502,28 @@ def keyboard_pty(s, client, cmd):
     client.send(cmd["⌘K Z"])
     restored = wait_until(lambda: not s.pane("Editor")["is_fullscreen"], timeout=3)
     check("⌘K Z amplía y restaura el panel", zoomed and restored)
-    client.send(cmd["⌘5"], cmd["⌘P"], pause=0.8)
-    prompt = wait_until(lambda: s.focused() == "Editor" and micro_prompt(s).startswith("> tab"), timeout=3)
-    check("⌘P va al editor y prepara «tab» en la línea de comandos de Micro", prompt, session=s)
-    client.send(ESC)
+    client.send(cmd["⌘5"], cmd["⌘P"], pause=1.0)
+    files = wait_until(lambda: (p := s.pane(FILES_TITLE)) and p["is_floating"] and p["is_focused"])
+    check("⌘P abre la paleta de archivos como ventana flotante con el foco", files, session=s)
+    client.send(cmd["⌘⇧P"], pause=1.0)
+    commands = wait_until(lambda: (p := s.pane(COMMANDS_TITLE)) and p["is_focused"] and s.pane(FILES_TITLE) is None)
+    check("⌘⇧P sobre ella la convierte en la paleta de comandos", commands, session=s)
+    client.send(b"foco al shell", pause=0.8)
+    view = s.plugin_view(pane_id(s.pane(COMMANDS_TITLE))) if s.pane(COMMANDS_TITLE) else ""
+    shell, editor = view.find("Ver: Foco al Shell"), view.find("Ver: Foco al editor")
+    listed = shell != -1 and (editor == -1 or shell < editor)
+    client.send(ENTER, pause=1.2)
+    check("la búsqueda difusa pone «Ver: Foco al Shell» primero y Enter lo ejecuta y cierra la paleta",
+          listed and wait_until(lambda: s.pane(COMMANDS_TITLE) is None and s.focused() == "Shell"), session=s)
+    client.send(cmd["⌘⇧P"], pause=1.0)
+    opened = wait_until(lambda: (p := s.pane(COMMANDS_TITLE)) and p["is_focused"])
+    client.send(cmd["⌘⇧P"], pause=1.0)
+    check("⌘⇧P otra vez cierra la paleta", opened and wait_until(lambda: s.pane(COMMANDS_TITLE) is None), session=s)
+    client.send(cmd["⌘P"], pause=1.0)
+    opened = wait_until(lambda: (p := s.pane(FILES_TITLE)) and p["is_focused"])
+    client.send(ESC, pause=1.0)
+    check("Esc cierra la paleta de archivos", opened and wait_until(lambda: s.pane(FILES_TITLE) is None), session=s)
+    check("la paleta no deja paneles de más", len(s.panes()) == len(TITLES), session=s)
 
 
 def editor_pty(s, client, cmd, project):
@@ -515,12 +537,24 @@ def editor_pty(s, client, cmd, project):
     client.send(paste("// vkterm-paste\r"), cmd["⌘S"])
     check("⌘V (bracketed paste) inserta texto en Micro",
           wait_until(lambda: "// vkterm-paste\n" in target.read_text()))
-    client.send(cmd["⌘P"], b"src/notes.ts", ENTER, pause=0.8)
-    check("⌘P abre un archivo en una pestaña nueva del editor",
-          wait_until(lambda: micro_status(s).startswith("src/notes.ts ")
-                     and "[src/notes.ts]" in micro_tabs(s) and DEMO_FILE in micro_tabs(s)),
-          micro_tabs(s).strip())
     notes = project / "src" / "notes.ts"
+    notes.write_text("")
+    client.send(cmd["⌘P"], pause=1.0)
+    listed = wait_until(lambda: (p := s.pane(FILES_TITLE)) and "src/notes.ts" in s.plugin_view(pane_id(p)), timeout=8)
+    client.send(b"notes", pause=0.8)
+    first = wait_until(lambda: (p := s.pane(FILES_TITLE))
+                       and s.plugin_view(pane_id(p)).splitlines()[2].strip("│ ").startswith("src/notes.ts"), timeout=3)
+    client.send(ENTER, pause=1.2)
+    check("⌘P lista los archivos del proyecto, «notes» deja src/notes.ts el primero y Enter lo abre en una pestaña",
+          listed and first and wait_until(lambda: s.pane(FILES_TITLE) is None and micro_status(s).startswith("src/notes.ts ")
+                                          and "[src/notes.ts]" in micro_tabs(s) and DEMO_FILE in micro_tabs(s)),
+          "listed=%s first=%s tabs=%s status=%s" % (listed, first, micro_tabs(s).strip(), micro_status(s)[:40]))
+    client.send(cmd["⌘P"], b"header", ENTER, pause=1.2)
+    check("⌘P con un archivo ya abierto salta a su pestaña sin duplicarla",
+          wait_until(lambda: micro_status(s).startswith(DEMO_FILE + " ") and micro_tabs(s).count("Header.tsx") == 1),
+          micro_tabs(s).strip())
+    client.send(cmd["⌘P"], b"notes", ENTER, pause=1.2)
+    wait_until(lambda: micro_status(s).startswith("src/notes.ts "))
     client.send(b"vk-middle", cmd["⌘←"], b"//H", cmd["⌘→"], b"//E", cmd["⌘S"])
     check("⌘← / ⌘→ van al inicio / fin de línea en Micro",
           wait_until(lambda: notes.read_text().splitlines()[0] == "//Hvk-middle//E"))
@@ -1023,10 +1057,19 @@ def keyboard_ghostty(s, keys, project, pid):
     check("⌘⌫ no activa la grabación de macros en Micro",
           target.read_text().splitlines()[2] == "htype HeaderProps = {e"
           and "Recording" not in s.screen("Editor"))
-    keys.send("cmd+5", "cmd+p", pause=0.8)
-    check("⌘P va al editor y prepara «tab» en Micro",
-          wait_until(lambda: s.focused() == "Editor" and micro_prompt(s).startswith("> tab"), timeout=3))
-    keys.send("esc")
+    keys.send("cmd+5", "cmd+p", pause=1.0)
+    files = wait_until(lambda: (p := s.pane(FILES_TITLE)) and p["is_floating"] and p["is_focused"])
+    keys.send("text:app", pause=0.8)
+    listed = wait_until(lambda: (p := s.pane(FILES_TITLE))
+                        and s.plugin_view(pane_id(p)).splitlines()[2].strip("│ ").startswith("src/App.tsx"), timeout=3)
+    keys.send("esc", pause=1.0)
+    check("⌘P abre la paleta de archivos, «app» encuentra src/App.tsx y Esc la cierra",
+          files and listed and wait_until(lambda: s.pane(FILES_TITLE) is None), session=s)
+    keys.send("cmd+shift+p", pause=1.0)
+    commands = wait_until(lambda: (p := s.pane(COMMANDS_TITLE)) and p["is_floating"] and p["is_focused"])
+    keys.send("text:focoalshell", "enter", pause=1.2)
+    check("⌘⇧P abre la paleta de comandos y «Ver: Foco al Shell» se ejecuta",
+          commands and wait_until(lambda: s.pane(COMMANDS_TITLE) is None and s.focused() == "Shell"), session=s)
 
     clipboard = run("osascript", "-e", "clipboard info")
     text = run("pbpaste")
@@ -1035,8 +1078,10 @@ def keyboard_ghostty(s, keys, project, pid):
     if sample:
         # Se pega en una pestaña vacía que se cierra sin guardar; la comparación
         # es en memoria y el contenido no se muestra. ⌘← lleva la vista al
-        # principio de la última línea pegada.
-        keys.send("cmd+p", "enter", pause=0.8)
+        # principio de la última línea pegada. La pestaña vacía la abre el
+        # comando «Archivo: Nuevo archivo» de la paleta (⌘⇧P).
+        keys.send("cmd+shift+p", pause=1.0)
+        keys.send("text:nuevoarchivo", "enter", pause=1.0)
         keys.send("cmd+v", pause=1.2)
         keys.send("cmd+left", pause=0.6)
         check("⌘V pega el portapapeles en Micro",

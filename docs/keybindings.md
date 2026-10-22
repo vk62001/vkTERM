@@ -46,7 +46,8 @@ La columna *Verificado* indica cómo se probó cada atajo:
 | ⌘⌥← / ⌘⌥→ | Pestaña anterior / siguiente del editor (y foco en el editor) | Alt , / Alt . → `prev_tab` / `next_tab` → Alt-, / Alt-. de Micro | G, P, M |
 | ⌃⇧Tab / ⌃Tab | Igual que ⌘⌥← / ⌘⌥→ | Alt , / Alt . | G, P, M |
 | ⌘W | Cerrar la pestaña del editor. Fuera del editor no hace nada (ya no cierra la ventana). | Alt 9 → `close_tab` → Ctrl-Q de Micro | G, P, M |
-| ⌘P | Abrir archivo en una pestaña nueva | Alt 0 → `quick_open`: foco al editor + Ctrl-E y `tab ` en Micro (Tab completa rutas) | G, P, M |
+| ⌘P | Paleta de archivos (como Quick Open de VS Code): busca por nombre mientras escribes, Enter abre en una pestaña (o salta a ella si ya está abierta), Esc cierra. | Alt 0 → `palette_files` a otra instancia del plugin (`mode "palette"`), flotante. Archivos de `git ls-files` (o recorrido del proyecto sin git), búsqueda difusa en `src/fuzzy.rs`; Enter → mensaje `palette` al explorador → `open` (bin/vkterm-open). | G, P |
+| ⌘⇧P | Paleta de comandos: todos los comandos de vkTERM con su atajo; `>` delante en la misma ventana. | Alt ; → `palette_commands`; lista en `src/commands.rs`; el explorador los ejecuta cuando la ventana se ha cerrado. | G, P |
 | ⌘S | Guardar en Micro | F2 | G, P, M |
 | ⌘K ⌘T | Tema de color (como VS Code): ↑ ↓ prueban cada tema, Enter lo deja, Esc vuelve al anterior. | Secuencia de Ghostty → Alt t → mensaje `toggle_themes` a otra instancia del plugin (`mode "themes"`) | G, P |
 | ⌘K ⌘S | Ventana de atajos (como Unity). Se cierra con Esc, cualquier tecla, un clic, otra vez ⌘K ⌘S o al pasar el foco a otro panel. | Secuencia de Ghostty → Alt ? → mensaje `toggle_shortcuts` a otra instancia del plugin (`mode "shortcuts"`) en un panel flotante | G, P |
@@ -112,7 +113,7 @@ en su propio panel.
 
 ## Editor (Micro)
 
-⌘S o Ctrl s guardar · ⌘P abrir en pestaña nueva · Ctrl o abrir en la pestaña
+⌘S o Ctrl s guardar · ⌘P abrir por nombre · Ctrl o abrir en la pestaña
 actual · Ctrl f buscar · Ctrl z / Ctrl y deshacer / rehacer · ⌥ ← / → palabra
 · ⇧ + flechas seleccionar · Ctrl c copiar la selección de Micro · **F1
 ayuda** · Alt g menú de atajos.
@@ -154,7 +155,7 @@ en ese panel · **Ctrl c** cierra el panel.
 | ⌘C | Enviar Ctrl-C mandaría SIGINT a los procesos del shell. | ⌘C solo copia la selección de Ghostty. | Resuelto. |
 | ⌘C en Micro | ⌘C no copia la selección interna de Micro: Ghostty no sabe qué aplicación tiene el foco. | En Micro, Ctrl c, o ⇧ + arrastrar (selección de Ghostty) y ⌘C. El plugin podría resolverlo en el futuro. | **Abierto.** |
 | ⌘⌫ | Ghostty envía Ctrl-U: en Micro empezaba a grabar una macro. | Ctrl-U desasignado en Micro. | Mitigado. Falta "borrar hasta el inicio de línea" en Micro. |
-| ⌘P con un archivo ya abierto | El comando `tab` de Micro abre una segunda pestaña del mismo archivo (mismo búfer). Desde el explorador no pasa. | — | Abierto, menor (H3: ⌘P con búsqueda). |
+| ⌘P con un archivo ya abierto | Abría una segunda pestaña del mismo archivo. | Resuelto el 22-10-2026: ⌘P abre por bin/vkterm-open, que salta a la pestaña existente. | Cerrado. |
 | ⌘T, ⌘D, ⌘⇧D | Pestañas y splits de Ghostty. | Desasignados. | Resuelto. |
 | ⌥ Option | Con `= right`, ⌥ derecho + 2 enfocaba el editor en vez de escribir @ (en Windows y Linux la @ es AltGr + 2, el Alt derecho). | `= false`: los dos ⌥ escriben caracteres, como en VS Code. Ampliar panel pasa a ⌘K Z. | Resuelto. |
 | Ctrl s/q/o/p/n/t/h/b | En modo normal, Zellij capturaba estas teclas. | Modo locked por defecto. | Resuelto. |

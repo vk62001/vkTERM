@@ -76,7 +76,12 @@ gh repo create vkterm --private --source . --push    # o --public
 
 "Plugins" puede querer decir dos cosas. Propongo hacer las dos, en este orden.
 
-### A. Paleta de comandos (⌘⇧P) y ⌘P con búsqueda
+### A. Paleta de comandos (⌘⇧P) y ⌘P con búsqueda — hecho el 22-10-2026
+
+**Entregado:** `plugins/vkterm/src/palette.rs` (ventana), `src/fuzzy.rs`
+(búsqueda difusa, con tests) y `src/commands.rs` (lista de comandos, con
+tests). Documentado en [keybindings.md](keybindings.md). Lo que sigue es la
+propuesta original.
 
 Es la base de VS Code: todo se encuentra escribiendo. La paleta lista las
 acciones de vkTERM y, más adelante, las de cada plugin. ⌘P busca archivos

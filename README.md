@@ -85,6 +85,9 @@ bin/vkterm ~/ruta/al/proyecto [archivo-inicial]
   (`zellij list-sessions`, `zellij kill-session <nombre>`).
 - **Archivo inicial.** Se fija por proyecto con un archivo `.vkterm`
   (`open=src/components/Header.tsx`).
+- **⌘P y ⌘⇧P, como VS Code.** ⌘P busca archivos del proyecto por nombre
+  mientras escribes (respeta `.gitignore`); ⌘⇧P lista todos los comandos de
+  vkTERM con su atajo. Son la misma ventana: escribir `>` pasa a comandos.
 - **Agentes.** Claude Code y Codex quedan en espera: pulsa **Enter** en su
   panel para arrancarlos.
 - **Ocultar no cierra nada.** Los procesos siguen vivos y cada panel vuelve a
@@ -110,7 +113,8 @@ bin/vkterm ~/ruta/al/proyecto [archivo-inicial]
 | ⌘1 · ⌘2 · ⌘3 · ⌘4 · ⌘5 | Explorador · Editor · Claude Code · Codex · Shell (los muestra si están ocultos) |
 | ⌘⌥← · ⌘⌥→ (o ⌃⇧Tab · ⌃Tab) | Pestaña anterior · siguiente del editor |
 | ⌘W | Cerrar la pestaña del editor |
-| ⌘P | Abrir archivo en una pestaña |
+| ⌘P | Abrir archivo por nombre (búsqueda difusa, como VS Code) |
+| ⌘⇧P | Paleta de comandos |
 | ⌘S | Guardar |
 | ⌘K ⌘S | Ventana con todos los atajos (⌘K y después ⌘S) |
 | ⌘K ⌘T | Tema de color |

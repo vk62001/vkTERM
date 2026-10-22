@@ -7,10 +7,10 @@
 // (default-plugins/configuration/src/presets.rs, v0.45.1) con primary=Ctrl y
 // secondary=Alt. Diferencias respecto al preset:
 //   - En modo locked solo se reservan Alt h/j/k/l, Alt =/-, Alt i/o, Alt z,
-//     Alt 0..9, Alt , / Alt ., Alt ?, Alt t y Alt u/y/a/s/x/c. Alt n/f/p/[/]
+//     Alt 0..9, Alt , / Alt ., Alt ;, Alt ?, Alt t y Alt u/y/a/s/x/c. Alt n/f/p/[/]
 //     y Alt+flechas quedan para Micro (multicursor, palabras, diff) y solo
 //     actúan en modo normal (tras Ctrl g).
-//   - Alt z (zoom), Alt 0..9, Alt , / ., Alt ?, Alt t y Alt u/y/a/s/x/c
+//   - Alt z (zoom), Alt 0..9, Alt , / ., Alt ;, Alt ?, Alt t y Alt u/y/a/s/x/c
 //     (destinos de la capa ⌘ de Ghostty) son añadidos de vkTERM.
 //   - Se omite la entrada "s" del modo session (zellij:share, servidor web).
 // Detalle y conflictos: docs/keybindings.md
@@ -244,7 +244,21 @@ keybinds clear-defaults=true {
         bind "Alt 7" { MessagePlugin "vkterm" { name "toggle_panel"; }; }
         bind "Alt 8" { MessagePlugin "vkterm" { name "toggle_agents"; }; }
         bind "Alt 9" { MessagePlugin "vkterm" { name "close_tab"; }; }
-        bind "Alt 0" { MessagePlugin "vkterm" { name "quick_open"; }; }
+        // Paleta (⌘P archivos, ⌘⇧P comandos): otra instancia (mode "palette").
+        bind "Alt 0" {
+            MessagePlugin "vkterm" {
+                name "palette_files"
+                mode "palette"
+                floating true
+            };
+        }
+        bind "Alt ;" {
+            MessagePlugin "vkterm" {
+                name "palette_commands"
+                mode "palette"
+                floating true
+            };
+        }
         bind "Alt ," { MessagePlugin "vkterm" { name "prev_tab"; }; }
         bind "Alt ." { MessagePlugin "vkterm" { name "next_tab"; }; }
         // Edición, como VS Code (⌘Z ⌘⇧Z ⌘A ⌘F ⌘X ⌘C): el plugin la pasa a
