@@ -53,4 +53,7 @@ else
   row vkterm.wasm pendiente "se compila al arrancar bin/vkterm (scripts/build-plugins.sh)"
 fi
 
+print "\nLenguajes (LSP, opcional: bin/vkterm-plugins install)"
+${0:A:h:h}/bin/vkterm-plugins status | sed 's/^vkterm-plugins: /  /'
+
 exit $missing

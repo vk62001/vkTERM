@@ -1,7 +1,7 @@
 # vkTERM — Fase 2: lenguajes (LSP), Control de código fuente y extensiones
 
-Estado: **aprobado el 22-10-2026.** P entregado el mismo día. Las descargas de
-H0 siguen pendientes de tu visto bueno.
+Estado: **aprobado el 22-10-2026.** P y H0 entregados el mismo día
+([informe](phase-2-report.md)). Siguiente: H1.
 
 ## Contexto
 
@@ -62,15 +62,17 @@ han probado todavía):
 | Formatear al guardar | Sí | En una PR sin fusionar (#72), que aplica limpia |
 | Licencia | MIT | MIT |
 
-**Propuesta: mlsp** en el commit `91261a0`, con tres parches propios en el
-repositorio:
+**Propuesta: mlsp** en el commit `91261a0`, con parches propios en el
+repositorio (`config/lsp/patches/`):
 
 1. Formatear al guardar (la PR #72).
 2. Los `.tsx` se anuncian como `typescriptreact`. Micro los llama
    `typescript` y el servidor no entendería el JSX.
-3. Renombrar abre en pestañas los archivos afectados que no estén abiertos,
-   como VS Code (quedan sin guardar). mlsp solo cambia los abiertos y dejaría
-   el proyecto roto.
+3. *(Añadido en H0.)* El cliente declara `publishDiagnostics`:
+   typescript-language-server 6 no manda los errores si no.
+4. *(H1.)* Renombrar abre en pestañas los archivos afectados que no estén
+   abiertos, como VS Code (quedan sin guardar). mlsp solo cambia los abiertos
+   y dejaría el proyecto roto.
 
 ### Servidores (versiones fijas)
 
@@ -91,7 +93,7 @@ repositorio:
   `.xcodeproj` (vkBLINK, vkmonitor, vkrar) solo ayuda archivo por archivo.
   Para el proyecto completo hace falta `xcode-build-server`, que escribe un
   `buildServer.json` en tu proyecto: queda fuera de esta fase.
-- **Go:** pesa unos 250 MB. Ninguno de tus proyectos es de Go, así que
+- **Go:** pesa unos 450 MB (Go, gopls y su caché). Ninguno de tus proyectos es de Go, así que
   `install` sin argumentos no lo descarga: hay que pedirlo con `install go`.
 
 Con tu aprobación, en H0 se instalan con el comando de H1 (primera versión).
@@ -109,6 +111,8 @@ Con tu aprobación, en H0 se instalan con el comando de H1 (primera versión).
    - Python, Go y un paquete SwiftPM mínimos.
 3. Los errores de cada pestaña siguen ahí al cambiar de pestaña.
 4. F12, ⇧F12, ⌃Space y F2 llegan a Micro a través de Ghostty y Zellij.
+   *(Resultado: ⌃Space no llega; en tu Mac es el atajo de macOS para cambiar
+   de fuente de entrada. Se quita: sugerencias con ⌘I y Tab.)*
 5. `node` está disponible en las sesiones abiertas desde Ghostty. Se arranca
    con `zsh -l`, que no lee `.zshrc`, donde suele cargarse nvm.
 6. Escribir en un archivo TS de 3.000 líneas no va con retraso.
@@ -148,7 +152,7 @@ bin/vkterm-plugins remove [lenguaje…]
 
 | VS Code | vkTERM | Atajo |
 |---|---|---|
-| Sugerencias en una lista desplegable | Micro no tiene listas desplegables: las sugerencias salen en la barra de estado; Tab y ⇧Tab las recorren | ⌃Space, ⌘I (como VS Code) |
+| Sugerencias en una lista desplegable | Micro no tiene listas desplegables: las sugerencias salen en la barra de estado; Tab y ⇧Tab las recorren | ⌘I (como VS Code) y Tab. ⌃Space no: macOS lo usa para cambiar de fuente de entrada. |
 | Ir a la definición | Abre el archivo en una pestaña (o salta a la suya) en esa línea | F12 |
 | Buscar todas las referencias | Lista en una división de Micro; Enter salta | ⇧F12 |
 | Mostrar información (hover) | En una división bajo el texto; ⌘W la cierra | ⌘K ⌘I |
@@ -163,7 +167,7 @@ bin/vkterm-plugins remove [lenguaje…]
   escriben caracteres. Se propone ⌘K ⌘F, que en VS Code da formato a la
   selección.
 - **Cómo llegan:**
-  - F12, ⇧F12 y ⌃Space van directos a Micro (`bindings.json`).
+  - F12 y ⇧F12 van directos a Micro (`bindings.json`).
   - ⌘K ⌘I, ⌘I, ⌘K ⌘F y F2 pasan por el controlador, como ⌘Z, y solo actúan
     con el foco en el editor.
 - **Paleta:** "Ir a la definición", "Buscar todas las referencias", "Mostrar
@@ -328,7 +332,7 @@ esta fase.
 
 **Modificados:**
 
-- `config/micro/bindings.json`: F12, ⇧F12, ⌃Space y los códigos internos del
+- `config/micro/bindings.json`: F12, ⇧F12 y los códigos internos del
   controlador (H1).
 - `config/ghostty/vkterm.ghostty`: ⌘I, ⌘K ⌘I, ⌘K ⌘F, F2 (H1); ⌘⇧E, ⌃⇧G,
   ⌘Enter (H2); inclusión de `extensions.ghostty` (H3).
@@ -354,8 +358,7 @@ esta fase.
 - **`--ghostty`:** cada atajo nuevo, con teclas sintetizadas; capturas de la
   ventana real de cada vista.
 - **Lista manual** (`docs/manual-tests.md`): secciones nuevas K (lenguaje), L
-  (Control de código fuente) y M (extensiones). ⌃Space se prueba a mano,
-  porque macOS lo usa para cambiar de fuente de entrada.
+  (Control de código fuente) y M (extensiones).
 
 ## Reglas que se mantienen
 

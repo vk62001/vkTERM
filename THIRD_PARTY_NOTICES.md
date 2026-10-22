@@ -15,6 +15,22 @@ licencia, para cuando se haga un fork o se empaquete una distribución.
 | [Codex CLI](https://github.com/openai/codex) | Proceso CLI en un panel (no se distribuye) | Apache-2.0 | Instalación del usuario |
 | Claude Code | Proceso CLI en un panel (no se distribuye) | Propietaria (términos de Anthropic) | Instalación del usuario |
 
+### Lenguajes (LSP): los descarga `bin/vkterm-plugins install`
+
+No están en el repositorio: el comando los descarga con versiones fijas
+(`config/lsp/`) en el estado local, `config/local/`, que no se versiona.
+
+| Componente | Uso en vkTERM | Licencia | Origen |
+|---|---|---|---|
+| [µlsp (mlsp)](https://github.com/Andriamanitra/mlsp) `91261a0` | Plugin LSP de Micro | MIT | GitHub (git, commit fijo) |
+| [typescript-language-server](https://github.com/typescript-language-server/typescript-language-server) 6.0.2 | Servidor de TypeScript / JavaScript | Apache-2.0 | npm (`config/lsp/package-lock.json`) |
+| [TypeScript](https://github.com/microsoft/TypeScript) 6.0.3 | tsserver | Apache-2.0 | npm |
+| [Pyright](https://github.com/microsoft/pyright) 1.1.414 | Servidor de Python | MIT | npm |
+| [Ruff](https://github.com/astral-sh/ruff) 0.16.10 | Formato y avisos de Python | MIT | GitHub releases (sha256 fijo) |
+| [rust-analyzer](https://github.com/rust-lang/rust-analyzer) | Servidor de Rust | MIT o Apache-2.0 | `rustup component add rust-analyzer` |
+| [sourcekit-lsp](https://github.com/swiftlang/sourcekit-lsp) y swift-format | Servidor y formato de Swift | Apache-2.0 con excepción de runtime | Xcode |
+| [Go](https://go.dev) 1.27.3 y [gopls](https://github.com/golang/tools/tree/master/gopls) 0.24.0 | Servidor de Go (solo con `install go`) | BSD-3-Clause | go.dev (sha256 fijo) y proxy.golang.org |
+
 ### Dependencias del plugin (`plugins/vkterm/Cargo.lock`)
 
 Además de zellij-tile, el `.wasm` incluye 131 crates transitivas. Sus licencias
@@ -38,6 +54,10 @@ crates MPL-2.0.
   colores de los temas "Dark Modern" y "Light Modern" de
   [Visual Studio Code](https://github.com/microsoft/vscode) (editor y colores
   ANSI del terminal). Copyright (c) Microsoft Corporation. Licencia MIT.
+- `config/lsp/mlsp.lua`: adaptado del `config.lua` de
+  [µlsp](https://github.com/Andriamanitra/mlsp), y `config/lsp/patches/`:
+  cambios sobre su `main.lua` (`01-format-on-save.patch` es la PR #72 del
+  propio proyecto). Copyright (c) 2023 Andriamanitra. Licencia MIT.
 - `plugins/vkterm/src/themes.rs`: los colores del atenuado se eligieron a
   partir de las paletas de esos temas (p. ej. overlay0 y crust de Catppuccin,
   MIT).

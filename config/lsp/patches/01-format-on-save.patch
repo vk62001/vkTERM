@@ -1,0 +1,222 @@
+diff --git a/config.lua b/config.lua
+index 5932bd1..5df005c 100644
+--- a/config.lua
++++ b/config.lua
+@@ -163,6 +163,10 @@ settings = {
+     -- key in ~/.config/micro/bindings.json even if this setting is false)
+     tabAutocomplete = false,
+ 
++    -- Send LSP format request when a file is saved. Does nothing if none of the
++    -- active language servers support formatting.
++    formatOnSave = true,
++
+     -- Automatically start language server(s) when a buffer with matching
+     -- filetype is opened
+     autostart = {
+diff --git a/main.lua b/main.lua
+index dcc8c93..930370f 100644
+--- a/main.lua
++++ b/main.lua
+@@ -408,10 +408,37 @@ function Request(method, params)
+     }
+ end
+ 
++function FormattingRequest(args)
++    assert(args.textDocument and args.textDocument.uri, "FormattingRequest requires a textDocument of type textDocumentIdentifier")
++    assert(args.options, "FormattingRequest requires options")
++
++    return Request("textDocument/formatting", {
++        textDocument = args.textDocument,
++        -- most servers completely ignore these values but tabSize and
++        -- insertSpaces are required according to the specification
++        -- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#formattingOptions
++        options = args.options
++    })
++end
++
++function RangeFormattingRequest(args)
++    assert(args.textDocument and args.textDocument.uri, "RangeFormattingRequest requires a textDocument of type textDocumentIdentifier")
++    assert(args.range, "RangeFormattingRequest requires a range")
++    assert(args.options, "RangeFormattingRequest requires options")
++
++    return Request("textDocument/rangeFormatting", {
++        textDocument = args.textDocument,
++        range = args.range,
++        -- most servers completely ignore these values but tabSize and
++        -- insertSpaces are required according to the specification
++        -- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#formattingOptions
++        options = args.options
++    })
++end
++
+ ---@class LSPResponseHandler
+----@field method string Method that is handled
+ ---@field onResult function Callback to handle results on the LSP Server response
+----@field onError function Callback to handle errors on the LSP Server response
++---@field onError? function Callback to handle errors on the LSP Server response
+ 
+ ---@param request LSPRequest
+ ---@param handler? LSPResponseHandler
+@@ -419,6 +446,10 @@ function LSPClient:request(request, handler)
+     assert(request, "MUST not be nil")
+     request.id = self.requestId -- set the correct Id
+ 
++    if handler.onError == nil then
++        handler.onError = defaultOnErrorHandler(request.method)
++    end
++
+     assert(type(handler)          == "table",    "'handler' MUST be a table")
+     assert(type(handler.onResult) == "function", "'handler.onResult' MUST be a function")
+     assert(type(handler.onError)  == "function", "'handler.onError' MUST be a function")
+@@ -697,17 +728,6 @@ function hoverAction(bufpane)
+ end
+ 
+ function formatAction(bufpane)
+-    -- most servers completely ignore these values but tabSize and
+-    -- insertSpaces are required according to the specification
+-    -- https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#formattingOptions
+-    local formatOptions = {
+-        tabSize = bufpane.Buf.Settings["tabsize"],
+-        insertSpaces = bufpane.Buf.Settings["tabstospaces"],
+-        trimTrailingWhitespace = true,
+-        insertFinalNewline = true,
+-        trimFinalNewlines = true
+-    }
+-
+     local selectedRanges = {}
+     local buf = bufpane.Buf
+     for i = 1, #buf:GetCursors() do
+@@ -723,53 +743,47 @@ function formatAction(bufpane)
+     end
+ 
+     local filetype = bufpane.Buf:FileType()
+-    local client, req, onResult, method
++
+     if #selectedRanges == 0 then
+         client = findClient(filetype, "documentFormattingProvider", "formatting")
+         if not client then return end
+ 
+-        method = "textDocument/formatting"
+-        req = Request(method, {
++        local req = FormattingRequest {
+             textDocument = textDocumentIdentifier(buf),
+-            options = formatOptions
+-        })
+-        ---@param result? TextEdit[]
+-        onResult = function(result)
+-            if result == json.null or next(result) == nil then
+-                display_info("Formatted file (no changes)")
+-            else
+-                local textedits = result
+-                applyTextEdits(bufpane.Buf, textedits)
+-                display_info("Formatted file")
++            options = formattingOptionsForBuf(buf)
++        }
++        client:request(req, {
++            onResult = function(result)
++                if result == json.null or next(result) == nil then
++                    display_info("Formatted file (no changes)")
++                else
++                    local textedits = result
++                    applyTextEdits(bufpane.Buf, textedits)
++                    display_info("Formatted file")
++                end
+             end
+-        end
+-
++        })
+     else
+         client = findClient(filetype, "documentRangeFormattingProvider", "formatting selections")
+         if not client then return end
+ 
+-        method = "textDocument/rangeFormatting"
+-        req = Request(method, {
++        local req = RangeFormattingRequest {
+             textDocument = textDocumentIdentifier(buf),
+             range = selectedRanges[1],
+-            options = formatOptions
+-        })
+-        ---@param result? TextEdit[]
+-        onResult = function(result)
+-            if result == json.null or next(result) == nil then
+-                display_info("Formatted selection (no changes)")
+-            else
+-                local textedits = result
+-                applyTextEdits(bufpane.Buf, textedits)
+-                display_info("Formatted selection")
++            options = formattingOptionsForBuf(buf)
++        }
++        client:request(req, {
++            onResult = function(result)
++                if result == json.null or next(result) == nil then
++                    display_info("Formatted selection (no changes)")
++                else
++                    local textedits = result
++                    applyTextEdits(bufpane.Buf, textedits)
++                    display_info("Formatted selection")
++                end
+             end
+-        end
++        })
+     end
+-
+-    client:request(req, {
+-        onResult = onResult,
+-        onError = defaultOnErrorHandler(method)
+-    })
+ end
+ 
+ function renameAction(bufpane, args)
+@@ -1176,6 +1190,38 @@ function onQuit(bufpane)
+ 
+ end
+ 
++function preSave(bufpane)
++    if not settings.formatOnSave then
++        return
++    end
++
++    local filetype = bufpane.Buf:FileType()
++    local client = findClient(filetype, "documentFormattingProvider", "formatting")
++    if not client then return end
++
++    local req = FormattingRequest {
++        textDocument = textDocumentIdentifier(bufpane.Buf),
++        options = formattingOptionsForBuf(bufpane.Buf)
++    }
++
++    client:request(req, {
++        onResult = function(result)
++            if result == nil or next(result) == nil then
++                -- no formatting was required
++            else
++                local textedits = result
++                applyTextEdits(bufpane.Buf, textedits)
++                bufpane:Save()
++                display_info("Formatted and saved " .. bufpane.Buf.Path)
++            end
++        end,
++        onError = function (error)
++            local errorId = LSPErrorCodes[error.code] or "Error " .. tostring(error.code)
++            display_error(string.format("Failed to format on save: %s: %s", errorId, error.message))
++        end
++    })
++end
++
+ function onSave(bufpane)
+     for _, client in pairs(activeConnections) do
+         client:didSave(bufpane.Buf)
+@@ -1755,3 +1801,13 @@ function gotoLSPLocation(result)
+     local startLoc, _ = LSPRange.toLocs(result.range)
+     openFileAtLoc(filePath, startLoc)
+ end
++
++function formattingOptionsForBuf(buf)
++    return {
++        tabSize = buf.Settings["tabsize"],
++        insertSpaces = buf.Settings["tabstospaces"],
++        trimTrailingWhitespace = true,
++        insertFinalNewline = true,
++        trimFinalNewlines = true
++    }
++end

@@ -201,6 +201,39 @@ MessageAndLaunchOtherPlugins (avisar al explorador del tema). Zellij los
 pregunta una vez en el panel del explorador y guarda la respuesta en su caché.
 Todas las instancias piden los mismos: la caché guarda los últimos pedidos.
 
+## Lenguajes (LSP)
+
+Micro no trae LSP: lo añade el plugin [µlsp](https://github.com/Andriamanitra/mlsp)
+(Lua), que instala `bin/vkterm-plugins` (Fase 2, H0).
+
+```
+Micro ─ µlsp (plug/mlsp, config/lsp/mlsp.lua) ─ stdio ─▶ lsp/bin/<servidor>
+                                                          ├─ typescript-language-server (node + TypeScript 6)
+                                                          ├─ pyright-langserver, ruff server
+                                                          ├─ rust-analyzer (rustup)
+                                                          ├─ sourcekit-lsp (xcrun)
+                                                          └─ gopls (con Go local)
+```
+
+- **Versiones fijas** en `config/lsp/`: `versions` (commit de µlsp, ruff, Go y
+  gopls con sha256), `package.json` y `package-lock.json` (npm), y
+  `patches/`, que se aplican a µlsp con `patch(1)`.
+- **Todo en el estado local:** `config/local/lsp/` y
+  `config/local/micro/plug/mlsp/`. `bin/vkterm` solo copia a
+  `local/micro/` la configuración de Micro, así que `plug/` persiste entre
+  sesiones.
+- **Rutas absolutas:** cada servidor es un ejecutable de `lsp/bin` que lanza
+  el programa con su ruta (también la de node). Las sesiones arrancan con
+  `zsh -l`, sin `.zshrc`, y su PATH no tiene el node de nvm.
+- **`config/lsp/mlsp.lua`** sustituye a la configuración de µlsp:
+  - arranca solo los servidores instalados (los busca en
+    `$VKTERM_STATE_DIR/lsp/bin`);
+  - activa los errores en el margen y Tab para completar;
+  - pasa a rust-analyzer los `Cargo.toml` anidados;
+  - formatear al guardar queda desactivado salvo `"mlsp.formatonsave": true`.
+- **Raíz del proyecto** para los servidores: la carpeta de trabajo de Micro,
+  que es la del proyecto.
+
 ## Teclado
 
 ```
@@ -326,6 +359,7 @@ vkTERM/
 │   ├── vkterm-editor          Proceso del panel Editor (Micro + archivo inicial)
 │   ├── vkterm-shell           Proceso del panel Shell ($SHELL)
 │   ├── vkterm-open            Abre un archivo en una pestaña del Micro del editor
+│   ├── vkterm-plugins         Instala el LSP (µlsp y servidores) con versiones fijas
 │   └── vkterm-theme           Guarda el tema (⌘K ⌘T) y lo aplica a Ghostty y Micro
 ├── config/
 │   ├── zellij/
@@ -333,6 +367,7 @@ vkTERM/
 │   │   ├── layouts/vkterm.kdl Explorador | editor / Shell | Claude Code / Codex
 │   │   └── themes/vkterm.kdl  Dark Modern y Light Modern para Zellij
 │   ├── micro/                 settings, bindings, colores (se copian a local/micro)
+│   ├── lsp/                   Versiones fijas, parches y configuración de µlsp
 │   ├── ghostty/
 │   │   ├── vkterm.ghostty     Perfil de Ghostty: capa ⌘, ⌥ = caracteres
 │   │   └── themes/            Light Modern para Ghostty
@@ -351,6 +386,8 @@ vkTERM/
 │   ├── phase-0-report.md      Fase 0 y correcciones 1 y 2
 │   ├── phase-1-plan.md        Plan aprobado de la Fase 1
 │   ├── phase-1-report.md      Entrega de la Fase 1
+│   ├── phase-2-plan.md        Plan aprobado de la Fase 2
+│   ├── phase-2-report.md      Entrega de la Fase 2 (por hitos)
 │   └── next-steps.md          Próximos pasos: GitHub y plugins
 ├── LICENSE                    GPL-3.0-or-later (decidido el 22-10-2026)
 └── THIRD_PARTY_NOTICES.md     Licencias de los componentes y crates usados

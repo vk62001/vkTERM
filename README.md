@@ -51,6 +51,22 @@ Para comprobar el entorno:
 scripts/doctor.sh
 ```
 
+### Lenguajes (LSP)
+
+Sugerencias, errores en línea, ir a la definición, información y formato en el
+editor, como en VS Code. Es opcional y se instala con un comando, con versiones
+fijas y todo dentro de `config/local/`:
+
+```sh
+bin/vkterm-plugins install          # TypeScript/JavaScript, Python, Rust y Swift
+bin/vkterm-plugins install go       # Go (descarga Go: unos 450 MB)
+bin/vkterm-plugins status
+```
+
+Usa el plugin [µlsp](https://github.com/Andriamanitra/mlsp) de Micro.
+Necesita node ≥ 22.22.2 para TypeScript y Python, y Xcode para Swift. En Rust
+añade el componente `rust-analyzer` de rustup.
+
 ## Uso
 
 Como `code .`: un comando global `vkterm` que abre el proyecto del directorio
@@ -144,6 +160,7 @@ Los dos ⌥ escriben los caracteres del teclado, como en cualquier app de macOS
 scripts/build-plugins.sh --test   # compila el plugin y ejecuta sus tests (cargo test)
 scripts/smoke-test.py             # configuración + workspace en un PTY
 scripts/smoke-test.py --ghostty   # además, Ghostty real con teclas sintetizadas
+scripts/lsp-check.py              # LSP en sesiones reales, por lenguaje (varios minutos)
 ```
 
 Las pruebas no lanzan los agentes ni tocan las sesiones existentes. La prueba
@@ -151,6 +168,7 @@ con teclado físico está en [docs/manual-tests.md](docs/manual-tests.md).
 
 - [Arquitectura](docs/architecture.md)
 - [Plan de la Fase 1](docs/phase-1-plan.md) · [Informe de la Fase 1](docs/phase-1-report.md)
+- [Plan de la Fase 2](docs/phase-2-plan.md) · [Informe de la Fase 2](docs/phase-2-report.md)
 - [Próximos pasos: GitHub y plugins](docs/next-steps.md)
 - [Informe de la Fase 0](docs/phase-0-report.md)
 - [Plugins](plugins/README.md)
