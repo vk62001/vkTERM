@@ -11,7 +11,7 @@ Pendiente:
 
 1. **Fusionar `modo-terminal` en `main`** cuando la lista manual esté
    hecha. La rama está en GitHub; los cambios, en [CHANGELOG.md](../CHANGELOG.md).
-2. **Abrir vkTERM.app** (ya creada en ~/Applications) desde el Dock o
+2. **Abrir vkTERM.app** (en ~/Applications, o en /Applications si la mueves) desde el Dock o
    Finder. macOS pedirá acceso al disco externo; pulsa Permitir. Comprueba
    que abre una ventana: desde un proceso en segundo plano, ni Ghostty.app
    ni su copia abren la ventana inicial, porque macOS no los activa.

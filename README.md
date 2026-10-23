@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/vkterm-icon.svg" width="160" alt="vkTERM">
+  <img src="docs/assets/vkterm-icon.png" width="160" alt="vkTERM">
 </p>
 
 <h1 align="center">vkTERM</h1>
@@ -70,7 +70,8 @@ bin/vkterm-app install --link
 
 - Crea `~/Applications/vkTERM.app`: una copia de tu Ghostty.app con otro
   nombre, icono e identificador, firmada en local. Abre el perfil de vkTERM y
-  no lee `~/.config/ghostty`. Tu Ghostty sigue igual.
+  no lee `~/.config/ghostty`. Tu Ghostty sigue igual. Puedes moverla a
+  `/Applications`: `install` la actualiza donde esté.
 - `--link` crea el comando `vkterm` en `~/.local/bin`.
 - **Cada vez que actualices Ghostty**, vuelve a ejecutar
   `bin/vkterm-app install`. `scripts/doctor.sh` avisa si la app se quedó
@@ -81,7 +82,7 @@ bin/vkterm-app install --link
 
 ## Uso
 
-Abre **vkTERM** (Dock, Spotlight o ~/Applications): es un terminal normal, con
+Abre **vkTERM** (Dock, Spotlight o la carpeta Aplicaciones): es un terminal normal, con
 tu shell, pestañas (⌘T) y divisiones (⌘D) de Ghostty. Cuando quieras trabajar
 en un proyecto:
 
@@ -209,7 +210,7 @@ está en [docs/manual-tests.md](docs/manual-tests.md).
 - [Próximos pasos: GitHub y plugins](docs/next-steps.md)
 - [Informe de la Fase 0](docs/phase-0-report.md)
 - [Plugins](plugins/README.md)
-- Icono: `docs/assets/vkterm-icon.svg` (fuente), `.png` y `.icns` (el de vkTERM.app).
+- Icono: `docs/assets/vkterm-icon.png` (1024 px), `vkterm-icon-256.png` y `vkterm.icns` (el de vkTERM.app).
 
 Toda la configuración vive en `config/` (y el estado, en `config/local/`): no
 se modifican `~/.config/ghostty`, `~/.config/zellij` ni `~/.config/micro`.

@@ -15,6 +15,7 @@ convierte en el IDE con `vkterm .` y vuelve al terminal con ⌘K F.
 - **vkTERM.app** (`bin/vkterm-app install [--link]`): una copia local de tu
   Ghostty.app con nombre, icono e identificador propios. Va firmada en local y
   carga el perfil de vkTERM. Tu Ghostty y `~/.config/ghostty` no cambian.
+  Se crea en `~/Applications` y se puede mover a `/Applications`.
 - **Modo terminal y modo IDE, por pestaña.** El modo terminal es tu zsh
   normal, con las pestañas (⌘T) y divisiones (⌘D) de Ghostty. Para pasar al
   IDE:
@@ -77,6 +78,7 @@ convierte en el IDE con `vkterm .` y vuelve al terminal con ⌘K F.
   - sin `title` fijo ni `maximize`;
   - sin actualizaciones automáticas;
   - con `config/local/user.ghostty` opcional para tus ajustes.
+- **Icono nuevo**: `/>Vk` en verde neón sobre grafito (`docs/assets/`).
 - **⌘T y ⌘⇧, se enlazan por tecla física**, porque macOS los mandaba al menú
   de Ghostty antes que a la tabla del IDE.
 - **Micro:**

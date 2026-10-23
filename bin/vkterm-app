@@ -7,6 +7,9 @@
 #   bin/vkterm-app path    [--test]       ruta de la app (la usan las pruebas)
 #   bin/vkterm-app uninstall [--test]
 #
+# La app se crea en ~/Applications. Si la mueves a /Applications, los
+# subcomandos la usan allí (VKTERM_APP_DIR fija otra carpeta).
+#
 #   --test   "vkTERM Test.app" (otro identificador) en ~/Library/Caches/vkterm,
 #            para scripts/smoke-test.py --ghostty sin tocar la app de uso diario
 #   --force  la vuelve a crear aunque esté al día
@@ -54,8 +57,11 @@ if (( test_app )); then
   app_dir=${VKTERM_TEST_APP_DIR:-$HOME/Library/Caches/vkterm}
   app_name="vkTERM Test" app_id=io.github.vk62001.vkterm.test
 else
-  app_dir=${VKTERM_APP_DIR:-$HOME/Applications}
   app_name=vkTERM app_id=io.github.vk62001.vkterm
+  app_dir=${VKTERM_APP_DIR:-$HOME/Applications}
+  if [[ -z ${VKTERM_APP_DIR:-} && ! -d $app_dir/$app_name.app && -d /Applications/$app_name.app ]]; then
+    app_dir=/Applications
+  fi
 fi
 app=$app_dir/$app_name.app
 

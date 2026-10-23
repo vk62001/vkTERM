@@ -46,7 +46,8 @@ PTY.
 
 ### vkTERM.app (`bin/vkterm-app`)
 
-Una copia de /Applications/Ghostty.app en ~/Applications con:
+Una copia de /Applications/Ghostty.app en ~/Applications (o en /Applications,
+si el usuario la mueve allí) con:
 
 - **Identificador propio** (`io.github.vk62001.vkterm`), nombre e icono. Hace
   falta para AppleScript: con el de Ghostty, `tell application id` podría
@@ -482,7 +483,8 @@ permiten moverlo:
 - `bin/vkterm-editor`: una marca vacía por sesión en `$TMPDIR`.
 - `config/zsh/vkterm.zsh`: una carpeta vacía por ventana abierta ya convertida
   (`$TMPDIR/vkterm-autostart-<nonce>`).
-- `bin/vkterm-app`: `~/Applications/vkTERM.app` (y `vkTERM Test.app` en
+- `bin/vkterm-app`: `~/Applications/vkTERM.app` o `/Applications/vkTERM.app`
+  (y `vkTERM Test.app` en
   `~/Library/Caches/vkterm`), su registro en LaunchServices, el enlace
   `~/.local/bin/vkterm` con `--link` y los permisos que macOS guarda para la
   app (carpetas, Automatización).
