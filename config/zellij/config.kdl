@@ -7,12 +7,14 @@
 // (default-plugins/configuration/src/presets.rs, v0.45.1) con primary=Ctrl y
 // secondary=Alt. Diferencias respecto al preset:
 //   - En modo locked solo se reservan Alt h/j/k/l, Alt =/-, Alt i/o, Alt z,
-//     Alt 0..9, Alt , / Alt ., Alt ;, Alt ?, Alt t y Alt u/y/a/s/x/c/v. Alt n/f/p/[/]
-//     y Alt+flechas quedan para Micro (multicursor, palabras, diff) y solo
-//     actúan en modo normal (tras Ctrl g).
-//   - Alt z (zoom), Alt 0..9, Alt , / ., Alt ;, Alt ?, Alt t y Alt u/y/a/s/x/c/v
-//     (destinos de la capa ⌘ de Ghostty) son añadidos de vkTERM.
-//   - Se omite la entrada "s" del modo session (zellij:share, servidor web).
+//     Alt 0..9, Alt , / Alt ., Alt ;, Alt ?, Alt t, Alt q, Alt r y
+//     Alt u/y/a/s/x/c/v. Alt n/f/p/[/] y Alt+flechas quedan para Micro
+//     (multicursor, palabras, diff) y solo actúan en modo normal (tras Ctrl g).
+//   - Alt z (zoom), Alt 0..9, Alt , / ., Alt ;, Alt ?, Alt t, Alt q, Alt r y
+//     Alt u/y/a/s/x/c/v (destinos de la capa ⌘ de Ghostty) son añadidos de
+//     vkTERM.
+//   - Se omiten la entrada "s" del modo session (zellij:share, servidor web) y
+//     "d" (Detach): la sesión dura lo que su pestaña de vkTERM.app.
 // Detalle y conflictos: docs/keybindings.md
 
 default_layout "vkterm"
@@ -42,6 +44,12 @@ show_release_notes false
 
 // El layout del proyecto es la fuente de verdad: no resucitar sesiones viejas.
 session_serialization false
+
+// Cerrar la pestaña o la ventana de vkTERM.app termina la sesión (y Micro,
+// Claude Code y Codex), como cerrar una ventana de VS Code. Lo que se recuerda
+// de la carpeta (pestañas, zonas, explorador) lo guarda vkTERM sobre la
+// marcha: bin/vkterm-state.
+on_force_close "quit"
 
 keybinds clear-defaults=true {
     normal {
@@ -175,7 +183,6 @@ keybinds clear-defaults=true {
     }
     session {
         bind "o" { SwitchToMode "Normal"; }
-        bind "d" { Detach; }
         bind "]" { FocusHostSession; SwitchToMode "Locked"; }
         bind "[" { FocusGuestSession; SwitchToMode "Locked"; }
         bind "f" { ToggleHostFullscreen; SwitchToMode "Locked"; }
@@ -244,6 +251,11 @@ keybinds clear-defaults=true {
         bind "Alt 7" { MessagePlugin "vkterm" { name "toggle_panel"; }; }
         bind "Alt 8" { MessagePlugin "vkterm" { name "toggle_agents"; }; }
         bind "Alt 9" { MessagePlugin "vkterm" { name "close_tab"; }; }
+        // ⌘K F: cerrar la carpeta (pregunta si se perdería algo) y volver al
+        // modo terminal.
+        bind "Alt q" { MessagePlugin "vkterm" { name "close_folder"; }; }
+        // ⌘⇧,: recargar la configuración de Ghostty sin perder el modo IDE.
+        bind "Alt r" { MessagePlugin "vkterm" { name "reload_config"; }; }
         // Paleta (⌘P archivos, ⌘⇧P comandos): otra instancia (mode "palette").
         bind "Alt 0" {
             MessagePlugin "vkterm" {

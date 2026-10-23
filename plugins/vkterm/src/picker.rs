@@ -77,12 +77,7 @@ impl Picker {
                 true
             }
             Event::PaneUpdate(manifest) => {
-                let panes = manifest.panes.values().flatten();
-                let url = panes.clone().find(|p| p.is_plugin && p.id == self.floating.me).and_then(|p| p.plugin_url.clone());
-                self.controller = panes
-                    .filter(|p| p.is_plugin && !p.is_floating && p.id != self.floating.me)
-                    .find(|p| url.is_some() && p.plugin_url == url)
-                    .map(|p| p.id);
+                self.controller = floating::controller(&manifest, self.floating.me);
                 let names = THEMES.iter().map(|t| t.name.chars().count()).max().unwrap_or(0);
                 let width = (names + 12 + 2 * (FRAME + PAD_X)).max(HINT.chars().count() + 4);
                 self.floating.place(width, THEMES.len() + 2 * (FRAME + PAD_Y));

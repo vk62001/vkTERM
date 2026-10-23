@@ -1,0 +1,127 @@
+#!/bin/zsh
+# vkTERM — modo de cada pestaña de vkTERM.app (AppleScript de Ghostty 1.3).
+#
+#   vkterm-surface claim NONCE           activa el modo IDE en la pestaña cuyo
+#                                        título es NONCE; escribe su id
+#   vkterm-surface release ID            vuelve al modo terminal
+#   vkterm-surface focus ID              enfoca esa pestaña y trae la app al frente
+#   vkterm-surface open DIR [ACCIÓN]     ventana nueva ya convertida en el IDE de DIR
+#   vkterm-surface reactivate            vuelve a activar el modo IDE en sus pestañas
+#
+# El modo IDE es la tabla de atajos `vkterm` de config/ghostty/vkterm.ghostty.
+# Una pestaña no sabe su propio id: bin/vkterm le pone un título único (OSC 2)
+# y `claim` busca el terminal con ese título. Las pestañas en modo IDE están en
+# projects/*/surface (bin/vkterm-state): `reactivate` las recorre, porque
+# Ghostty vacía las tablas al recargar la configuración (bin/vkterm-theme).
+#
+# La app es VKTERM_APP_ID (lo exporta su lanzador) o la de uso diario.
+emulate -L zsh
+setopt no_unset pipe_fail extended_glob
+
+vkterm_home=${0:A:h:h}
+state=${VKTERM_STATE_DIR:-$vkterm_home/config/local}
+app_id=${VKTERM_APP_ID:-io.github.vk62001.vkterm}
+[[ $app_id == [A-Za-z0-9.-]## ]] || { print -u2 "vkterm-surface: identificador no válido: $app_id"; exit 2; }
+
+# Ejecuta el AppleScript de la entrada estándar con argumentos. El id de la app
+# va escrito en el texto (@APP@): con `tell application id <variable>`,
+# AppleScript no puede compilar los términos de Ghostty (terminal, perform
+# action…).
+osa() {
+  local script=$(cat)
+  osascript -e "${script//@APP@/\"$app_id\"}" "$@" 2>/dev/null
+}
+
+running() {
+  [[ -n $(lsappinfo find bundleid=$app_id 2>/dev/null) ]]
+}
+
+case ${1:-} in
+  claim)
+    # Ghostty tarda unos milisegundos en aplicar el título.
+    osa ${2:?nonce} <<'OSA'
+on run {nonce}
+  tell application id @APP@
+    repeat 40 times
+      try
+        set t to first terminal whose name is nonce
+        perform action "activate_key_table:vkterm" on t
+        return id of t
+      end try
+      delay 0.05
+    end repeat
+  end tell
+  error "no encontrado"
+end run
+OSA
+    ;;
+  release)
+    osa ${2:?id} <<'OSA' >/dev/null
+on run {terminalId}
+  tell application id @APP@ to perform action "deactivate_all_key_tables" on terminal id terminalId
+end run
+OSA
+    ;;
+  focus)
+    osa ${2:?id} <<'OSA' >/dev/null
+on run {terminalId}
+  tell application id @APP@
+    focus terminal id terminalId
+    activate
+  end tell
+end run
+OSA
+    ;;
+  open)
+    dir=${2:?carpeta} then=${3:-}
+    # Con la app cerrada, la variable llega a todas las pestañas de su
+    # arranque: config/zsh/vkterm.zsh convierte solo la que reclama el nonce.
+    autostart="VKTERM_AUTOSTART=vk$RANDOM$RANDOM:$then:${dir:A}"
+    new_window() {
+      osa ${dir:A} $autostart <<'OSA' >/dev/null
+on run {dir, autostart}
+  tell application id @APP@
+    set cfg to new surface configuration
+    set initial working directory of cfg to dir
+    set environment variables of cfg to {autostart}
+    new window with configuration cfg
+    activate
+  end tell
+end run
+OSA
+    }
+    if running; then
+      new_window
+    else
+      open -b $app_id --env $autostart
+      # Ghostty abre su primera ventana al activarse; si macOS no la activa
+      # (la lanza un proceso que no está al frente), se abre aquí. El nonce
+      # evita convertir dos veces si al final aparecen las dos.
+      for _ in {1..40}; do
+        running && [[ $(osa <<'OSA'
+tell application id @APP@ to count windows
+OSA
+) != 0 ]] && exit 0
+        sleep 0.2
+      done
+      running && new_window
+    fi
+    ;;
+  reactivate)
+    file= id= pid=
+    for file in $state/projects/*/surface(N); do
+      id=$(sed -n 's/^id=//p' $file) pid=$(sed -n 's/^pid=//p' $file)
+      [[ -n $id && -n $pid ]] && kill -0 $pid 2>/dev/null || continue
+      [[ $(sed -n 's/^app=//p' $file) == $app_id ]] || continue
+      osa $id <<'OSA' >/dev/null
+on run {terminalId}
+  tell application id @APP@ to perform action "activate_key_table:vkterm" on terminal id terminalId
+end run
+OSA
+    done
+    ;;
+  *)
+    print -u2 "uso: vkterm-surface claim NONCE | release ID | focus ID | open DIR [ACCIÓN] | reactivate"
+    exit 2
+    ;;
+esac

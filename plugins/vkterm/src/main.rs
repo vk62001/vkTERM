@@ -10,25 +10,38 @@
 //! - **Foco**: como "Dim inactive split panes" de iTerm2, los paneles sin foco
 //!   se ven atenuados y el enfocado con sus colores normales.
 //!
+//! - **Memoria**: al abrir la carpeta deja el workspace como estaba (zonas,
+//!   foco, carpetas desplegadas) y lo guarda cuando cambia (src/memory.rs,
+//!   bin/vkterm-state). La sesión termina al cerrar la carpeta (⌘K F) o la
+//!   pestaña de vkTERM.app.
+//!
 //! Con `mode "shortcuts"` en la configuración es, en cambio, la ventana de
 //! atajos (src/overlay.rs); con `mode "themes"`, el selector de tema
 //! (src/picker.rs); con `mode "palette"`, la paleta de archivos y comandos
-//! (src/palette.rs). Con otro `mode`, se cierra.
+//! (src/palette.rs); con `mode "confirm"`, la confirmación de cerrar la
+//! carpeta (src/confirm.rs); con `mode "status"`, la barra de estado
+//! (src/status.rs). Con otro `mode`, se cierra.
+mod confirm;
 mod floating;
 mod overlay;
 mod palette;
 mod picker;
+mod status;
 
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use confirm::Confirm;
 use overlay::Overlay;
 use palette::Palette;
 use picker::Picker;
+use status::StatusBar;
 use vkterm::clipboard;
+use vkterm::closing::Loss;
 use vkterm::commands;
 use vkterm::layout::{self, Visible};
+use vkterm::memory::Memory;
 use vkterm::themes;
 use vkterm::tree::{Action, DirEntry, Tree};
 use zellij_tile::prelude::*;
@@ -38,6 +51,11 @@ pub(crate) const HOST: &str = "/host";
 const HEADER_ROWS: usize = 1;
 const FOOTER_ROWS: usize = 1;
 const HINT: &str = "Enter abrir · Espacio vista previa · ⌘B ocultar";
+/// Cada cuántos segundos se guarda la memoria si cambió.
+const TICK: f64 = 1.0;
+/// Cada cuántos ticks se vuelve a mirar la rama de git.
+const BRANCH_TICKS: u32 = 5;
+const AGENTS: [&str; 2] = ["Claude Code", "Codex"];
 /// Permisos de todas las instancias (explorador, atajos y temas). Reconfigure
 /// cambia el tema de Zellij; MessageAndLaunchOtherPlugins avisa al explorador
 /// del tema elegido.
@@ -88,12 +106,32 @@ struct State {
     /// Lo elegido en la paleta, pendiente de que su ventana se cierre y el
     /// foco vuelva a los paneles fijos: (mensaje, payload).
     pending: Option<(String, String)>,
+    /// Memoria de la carpeta leída al arrancar, pendiente de aplicar.
+    memory: Option<Memory>,
+    /// Ya se aplicó la memoria: a partir de aquí se guarda.
+    restored: bool,
+    /// Lo último guardado (o leído), para guardar solo cuando cambia.
+    saved_memory: String,
+    /// Último panel fijo con el foco (con una ventana flotante a la vista, no
+    /// hay ninguno).
+    last_focus: Option<String>,
+    ticks: u32,
+    /// ⌘K F en curso: agentes en marcha mientras se pregunta a Micro.
+    closing: Option<Vec<String>>,
+    /// Barra de estado: instancias (una por pestaña de Zellij), rama, modo
+    /// y lo último enviado.
+    status_bars: Vec<u32>,
+    branch: String,
+    mode_name: String,
+    sent_status: String,
 }
 
 enum Window {
     Shortcuts(Overlay),
     Themes(Picker),
     Palette(Palette),
+    Confirm(Confirm),
+    Status(StatusBar),
     /// `mode` desconocido: se cierra sin hacer nada.
     Closed,
 }
@@ -121,6 +159,18 @@ impl ZellijPlugin for State {
                 self.window = Some(Window::Palette(palette));
                 return;
             }
+            Some("confirm") => {
+                let mut confirm = Confirm::default();
+                confirm.load();
+                self.window = Some(Window::Confirm(confirm));
+                return;
+            }
+            Some("status") => {
+                let mut bar = StatusBar::default();
+                bar.load();
+                self.window = Some(Window::Status(bar));
+                return;
+            }
             // Una ventana que esta versión no conoce (un atajo de una
             // configuración más nueva): sin esto sería un segundo explorador
             // y controlador.
@@ -145,8 +195,10 @@ impl ZellijPlugin for State {
             EventType::FileSystemUpdate,
             EventType::FileSystemDelete,
             EventType::RunCommandResult,
+            EventType::Timer,
         ]);
         set_selectable(true);
+        set_timeout(TICK);
         let ids = get_plugin_ids();
         self.me = ids.plugin_id;
         self.project = ids.initial_cwd;
@@ -159,19 +211,24 @@ impl ZellijPlugin for State {
             Some(Window::Shortcuts(overlay)) => return overlay.update(event),
             Some(Window::Themes(picker)) => return picker.update(event),
             Some(Window::Palette(palette)) => return palette.update(event),
+            Some(Window::Confirm(confirm)) => return confirm.update(event),
+            Some(Window::Status(_)) => return false,
             Some(Window::Closed) => return false,
             None => {}
         }
         match event {
             Event::PaneUpdate(manifest) => {
+                let bars = self.status_bar_ids(&manifest);
                 for (tab, panes) in manifest.panes {
                     if panes.iter().any(|p| p.is_plugin && p.id == self.me) {
                         self.my_tab = tab;
                         self.panes = panes;
                     }
                 }
+                self.set_status_bars(bars);
                 self.restart_editor_if_closed();
                 self.dim_inactive();
+                self.try_restore();
                 true
             }
             Event::TabUpdate(tabs) => {
@@ -196,25 +253,26 @@ impl ZellijPlugin for State {
                 // Llega ya con los permisos concedidos.
                 if !self.asked_theme {
                     self.asked_theme = true;
-                    let context = BTreeMap::from([("vkterm".to_string(), "current".to_string())]);
-                    run_command(&["vkterm-theme", "current"], context);
+                    run_command(&["vkterm-theme", "current"], context("current"));
+                    run_command(&["vkterm-state", "load"], context("memory"));
+                    self.refresh_branch();
                 }
+                self.mode_name = match mode.mode {
+                    InputMode::Locked => String::new(),
+                    other => format!("{other:?}").to_uppercase(),
+                };
+                // También llega al cambiar el tema de Zellij: la barra de estado
+                // no recibe eventos y se vuelve a dibujar con cada mensaje.
+                self.send_status(true);
                 false
             }
-            Event::RunCommandResult(_, stdout, _, context)
-                if context.get("vkterm").map(String::as_str) == Some("current") =>
-            {
-                self.set_theme(&String::from_utf8_lossy(&stdout));
-                true
-            }
-            Event::RunCommandResult(_, stdout, _, context)
-                if context.get("vkterm").map(String::as_str) == Some("paste") =>
-            {
-                let pane = context.get("pane").and_then(|id| id.parse().ok());
-                if let Some(pane) = pane.filter(|_| clipboard::image_only(&String::from_utf8_lossy(&stdout))) {
-                    write_to_pane_id(vec![0x16], PaneId::Terminal(pane));
-                }
+            Event::Timer(_) => {
+                self.tick();
+                set_timeout(TICK);
                 false
+            }
+            Event::RunCommandResult(code, stdout, _, ctx) if ctx.contains_key("vkterm") => {
+                self.command_result(&ctx, code, &String::from_utf8_lossy(&stdout))
             }
             Event::Key(key) => self.handle_key(key),
             Event::Mouse(mouse) => self.handle_mouse(mouse),
@@ -233,6 +291,8 @@ impl ZellijPlugin for State {
             Some(Window::Shortcuts(overlay)) => return overlay.pipe(message),
             Some(Window::Themes(picker)) => return picker.pipe(message),
             Some(Window::Palette(palette)) => return palette.pipe(message),
+            Some(Window::Confirm(confirm)) => return confirm.pipe(message),
+            Some(Window::Status(bar)) => return bar.pipe(message),
             Some(Window::Closed) => return false,
             None => {}
         }
@@ -256,6 +316,8 @@ impl ZellijPlugin for State {
             Some(Window::Shortcuts(overlay)) => return overlay.render(rows, cols),
             Some(Window::Themes(picker)) => return picker.render(rows, cols),
             Some(Window::Palette(palette)) => return palette.render(rows, cols),
+            Some(Window::Confirm(confirm)) => return confirm.render(rows, cols),
+            Some(Window::Status(bar)) => return bar.render(rows, cols),
             Some(Window::Closed) => return,
             None => {}
         }
@@ -349,6 +411,11 @@ impl State {
             "zoom" => toggle_focus_fullscreen(),
             "toggle_excluded" => self.tree.show_excluded = !self.tree.show_excluded,
             "open_window" => self.open_window(payload.trim()),
+            // ⌘K F y la respuesta de su confirmación (src/confirm.rs).
+            "close_folder" => self.close_folder(),
+            "close_folder_confirmed" => self.close_confirmed(payload.trim()),
+            // ⌘⇧,: Ghostty relee su configuración y la pestaña sigue en modo IDE.
+            "reload_config" => run_command(&["vkterm-theme", "reload"], BTreeMap::new()),
             // Del selector de tema (src/picker.rs).
             "set_theme" => self.set_theme(payload),
             _ => return false,
@@ -541,13 +608,20 @@ impl State {
     }
 
     fn set_zone(&mut self, zone: Zone, show: bool, focus: bool) {
+        if self.change_zone(zone, show, focus) {
+            self.apply_layout();
+        }
+    }
+
+    /// Muestra u oculta la zona sin recolocar nada; true si cambió.
+    fn change_zone(&mut self, zone: Zone, show: bool, focus: bool) -> bool {
         // Con otra pestaña de Zellij activa, el layout se aplicaría a esa.
         if self.active_tab != self.my_tab {
-            return;
+            return false;
         }
         let ids = self.zone_panes(zone);
         if ids.is_empty() {
-            return;
+            return false;
         }
         if show {
             for (i, id) in ids.iter().enumerate() {
@@ -568,8 +642,12 @@ impl State {
             Zone::Panel => self.visible.panel = show,
             Zone::Agents => self.visible.agents = show,
         }
-        // Zellij inserta el panel mostrado donde encuentra sitio: se recoloca
-        // todo con el layout del estado actual. retain=true: nunca cierra paneles.
+        true
+    }
+
+    /// Zellij inserta el panel mostrado donde encuentra sitio: se recoloca
+    /// todo con el layout del estado actual. retain=true: nunca cierra paneles.
+    fn apply_layout(&self) {
         override_layout(LayoutInfo::Stringified(layout::kdl(self.visible)), true, true, true, BTreeMap::new());
     }
 
@@ -647,20 +725,18 @@ impl State {
         }
     }
 
-    /// Desde la paleta: la ventana de atajos o el selector de tema, otra
-    /// instancia flotante del plugin, como hacen los atajos de config.kdl.
+    /// Desde la paleta o al abrir la carpeta (`vkterm --then`): la ventana de
+    /// atajos, el selector de tema o la paleta, otra instancia flotante del
+    /// plugin, como hacen los atajos de config.kdl.
     fn open_window(&mut self, kind: &str) {
         let (name, mode) = match kind {
             "shortcuts" => ("toggle_shortcuts", "shortcuts"),
             "themes" => ("toggle_themes", "themes"),
+            "palette_files" => ("palette_files", "palette"),
+            "palette_commands" => ("palette_commands", "palette"),
             _ => return,
         };
-        pipe_message_to_plugin(
-            MessageToPlugin::new(name)
-                .with_plugin_url("vkterm")
-                .with_plugin_config(BTreeMap::from([("mode".to_string(), mode.to_string())]))
-                .new_plugin_instance_should_float(true),
-        );
+        launch_window(name, mode, None);
     }
 
     /// Colores del atenuado para el tema (o los de config.kdl, si los define).
@@ -698,6 +774,240 @@ impl State {
         }
     }
 
+    // ------------------------------------------------------------- memoria
+
+    /// Resultados de `run_command` (contexto `vkterm`).
+    fn command_result(&mut self, ctx: &BTreeMap<String, String>, code: Option<i32>, stdout: &str) -> bool {
+        match ctx["vkterm"].as_str() {
+            "current" => self.set_theme(stdout),
+            "paste" => {
+                let pane = ctx.get("pane").and_then(|id| id.parse().ok());
+                if let Some(pane) = pane.filter(|_| clipboard::image_only(stdout)) {
+                    write_to_pane_id(vec![0x16], PaneId::Terminal(pane));
+                }
+                return false;
+            }
+            "memory" => {
+                let memory = Memory::parse(stdout);
+                self.saved_memory = memory.to_text();
+                self.memory = Some(memory);
+                self.try_restore();
+            }
+            "branch" => {
+                self.branch = if code == Some(0) { stdout.trim().to_string() } else { String::new() };
+                self.send_status(false);
+                return false;
+            }
+            "close_check" => self.close_checked(stdout),
+            "close_save" if stdout.trim() == "saved" => self.quit(),
+            "close_save" => {
+                self.closing = None;
+                self.status = Some("No se pudieron guardar todos los archivos: la carpeta sigue abierta".to_string());
+            }
+            "close_discard" => self.quit(),
+            "final" => quit_zellij(),
+            _ => return false,
+        }
+        true
+    }
+
+    /// Aplica la memoria una sola vez, cuando ya están todos los paneles:
+    /// carpetas desplegadas, zonas visibles, foco y la acción de `--then`.
+    fn try_restore(&mut self) {
+        if self.restored || self.active_tab != self.my_tab {
+            return;
+        }
+        let Some(memory) = self.memory.take() else { return };
+        let ready = self.panes.iter().any(|p| p.is_plugin && p.id == self.me)
+            && ["Editor", "Shell", "Claude Code", "Codex"].iter().all(|t| self.terminal(t).is_some());
+        if !ready {
+            self.memory = Some(memory);
+            return;
+        }
+        self.restored = true;
+        self.tree.show_excluded = memory.show_excluded;
+        for dir in self.tree.restore(&memory.expanded, memory.selected.clone()) {
+            self.load_dir(&dir);
+        }
+        self.tree.keep_visible(self.list_height());
+        let mut changed = false;
+        for (zone, show) in [
+            (Zone::Sidebar, memory.visible.sidebar),
+            (Zone::Panel, memory.visible.panel),
+            (Zone::Agents, memory.visible.agents),
+        ] {
+            if !show {
+                changed |= self.change_zone(zone, false, false);
+            }
+        }
+        if changed {
+            self.apply_layout();
+        }
+        if let Some(target) = &memory.focus {
+            self.focus(target);
+        }
+        self.last_focus = memory.focus.clone();
+        match memory.then.as_deref() {
+            Some("show_sidebar") => self.focus("explorer"),
+            Some("show_panel") => self.focus("shell"),
+            Some("quick_open") => self.open_window("palette_files"),
+            Some("command_palette") => self.open_window("palette_commands"),
+            _ => {}
+        }
+    }
+
+    /// Panel fijo con el foco, por identidad (como `focus`).
+    fn focused_target(&self) -> Option<&'static str> {
+        if self.floating_active {
+            return None;
+        }
+        let pane = self.panes.iter().find(|p| !p.is_floating && self.has_focus(p))?;
+        if pane.is_plugin {
+            return (pane.id == self.me).then_some("explorer");
+        }
+        match pane.title.as_str() {
+            "Editor" => Some("editor"),
+            "Shell" => Some("shell"),
+            "Claude Code" => Some("claude"),
+            "Codex" => Some("codex"),
+            _ => None,
+        }
+    }
+
+    fn snapshot(&mut self) -> String {
+        if let Some(target) = self.focused_target() {
+            self.last_focus = Some(target.to_string());
+        }
+        Memory {
+            visible: self.visible,
+            focus: self.last_focus.clone(),
+            expanded: self.tree.expanded_dirs(),
+            selected: self.tree.selected_path(),
+            show_excluded: self.tree.show_excluded,
+            then: None,
+        }
+        .to_text()
+    }
+
+    /// Cada segundo: guarda la memoria si cambió (solo después de aplicarla,
+    /// para no pisarla con el estado inicial) y, de vez en cuando, mira la
+    /// rama de git para la barra de estado.
+    fn tick(&mut self) {
+        self.ticks = self.ticks.wrapping_add(1);
+        if self.ticks % BRANCH_TICKS == 0 && self.asked_theme {
+            self.refresh_branch();
+        }
+        if !self.restored || self.closing.is_some() {
+            return;
+        }
+        let text = self.snapshot();
+        if text != self.saved_memory {
+            run_command(&["vkterm-state", "save", "workspace", &text], BTreeMap::new());
+            self.saved_memory = text;
+        }
+    }
+
+    // ------------------------------------------------------- cerrar carpeta
+
+    /// ⌘K F: si no se pierde nada, cierra; si no, pregunta (src/confirm.rs).
+    /// Lo modificado en el editor lo sabe el plugin Lua de Micro.
+    fn close_folder(&mut self) {
+        if self.closing.is_some() {
+            return;
+        }
+        let running: Vec<String> = AGENTS
+            .iter()
+            .filter(|t| self.panes.iter().any(|p| !p.is_plugin && p.title == **t && !p.exited && !p.is_held))
+            .map(|t| t.to_string())
+            .collect();
+        self.closing = Some(running);
+        run_command(&["vkterm-state", "close-check"], context("close_check"));
+    }
+
+    fn close_checked(&mut self, editor: &str) {
+        let mut loss = Loss {
+            project: self.project_name(),
+            agents: self.closing.take().unwrap_or_default(),
+            ..Default::default()
+        };
+        loss.read_editor(editor, &self.project);
+        if loss.is_empty() {
+            self.closing = Some(Vec::new());
+            self.quit();
+        } else {
+            launch_window("close_folder", "confirm", Some(loss.to_text()));
+        }
+    }
+
+    fn close_confirmed(&mut self, choice: &str) {
+        self.closing = Some(Vec::new());
+        match choice {
+            "save" => run_command(&["vkterm-state", "save-all"], context("close_save")),
+            "discard" => run_command(&["vkterm-state", "discard"], context("close_discard")),
+            "close" => self.quit(),
+            _ => self.closing = None,
+        }
+    }
+
+    /// Termina la sesión, después de guardar la memoria si había cambios.
+    fn quit(&mut self) {
+        let text = self.snapshot();
+        if self.restored && text != self.saved_memory {
+            run_command(&["vkterm-state", "save", "workspace", &text], context("final"));
+        } else {
+            quit_zellij();
+        }
+    }
+
+    fn project_name(&self) -> String {
+        self.project.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    }
+
+    // ---------------------------------------------------- barra de estado
+
+    /// Las barras de estado: instancias fijas de este plugin que no se pueden
+    /// enfocar (src/status.rs).
+    fn status_bar_ids(&self, manifest: &PaneManifest) -> Vec<u32> {
+        let panes = manifest.panes.values().flatten();
+        let Some(url) = panes.clone().find(|p| p.is_plugin && p.id == self.me).and_then(|p| p.plugin_url.clone()) else {
+            return Vec::new();
+        };
+        panes
+            .filter(|p| p.is_plugin && p.id != self.me && !p.is_floating && !p.is_selectable)
+            .filter(|p| p.plugin_url.as_ref() == Some(&url))
+            .map(|p| p.id)
+            .collect()
+    }
+
+    fn set_status_bars(&mut self, bars: Vec<u32>) {
+        if bars != self.status_bars {
+            self.status_bars = bars;
+            self.send_status(true);
+        }
+    }
+
+    fn refresh_branch(&self) {
+        run_command_with_env_variables_and_cwd(
+            &["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            BTreeMap::new(),
+            self.project.clone(),
+            context("branch"),
+        );
+    }
+
+    fn send_status(&mut self, force: bool) {
+        let payload = format!("{}\t{}", self.branch, self.mode_name);
+        if !force && payload == self.sent_status {
+            return;
+        }
+        for id in &self.status_bars {
+            pipe_message_to_plugin(
+                MessageToPlugin::new("status").with_destination_plugin_id(*id).with_payload(payload.clone()),
+            );
+        }
+        self.sent_status = payload;
+    }
+
     /// Al cerrar la última pestaña Micro termina; como en VS Code, el editor
     /// vuelve a quedar disponible (vacío) en vez de un panel "EXITED".
     fn restart_editor_if_closed(&mut self) {
@@ -713,6 +1023,24 @@ impl State {
             self.editor_restarting = false;
         }
     }
+}
+
+/// Contexto de `run_command`: el plugin reconoce el resultado por `vkterm`.
+fn context(kind: &str) -> BTreeMap<String, String> {
+    BTreeMap::from([("vkterm".to_string(), kind.to_string())])
+}
+
+/// Otra instancia flotante del plugin (`mode`), como `MessagePlugin … floating
+/// true` en config.kdl: Zellij la lanza si no existe.
+fn launch_window(name: &str, mode: &str, payload: Option<String>) {
+    let mut message = MessageToPlugin::new(name)
+        .with_plugin_url("vkterm")
+        .with_plugin_config(BTreeMap::from([("mode".to_string(), mode.to_string())]))
+        .new_plugin_instance_should_float(true);
+    if let Some(payload) = payload {
+        message = message.with_payload(payload);
+    }
+    pipe_message_to_plugin(message);
 }
 
 /// Recorta (con "…") o rellena con espacios hasta `width` columnas.

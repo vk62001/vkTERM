@@ -127,12 +127,7 @@ impl Palette {
                 true
             }
             Event::PaneUpdate(manifest) => {
-                let panes = manifest.panes.values().flatten();
-                let url = panes.clone().find(|p| p.is_plugin && p.id == self.floating.me).and_then(|p| p.plugin_url.clone());
-                self.controller = panes
-                    .filter(|p| p.is_plugin && !p.is_floating && p.id != self.floating.me)
-                    .find(|p| url.is_some() && p.plugin_url == url)
-                    .map(|p| p.id);
+                self.controller = floating::controller(&manifest, self.floating.me);
                 let (columns, _) = self.floating.area();
                 let width = (columns * 3 / 5).clamp(44, 100);
                 self.floating.place(width, LIST_ROWS + 1 + 2 * FRAME);

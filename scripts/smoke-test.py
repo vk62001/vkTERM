@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
-"""vkTERM — pruebas de humo (Fase 1: interfaz tipo VS Code).
+"""vkTERM — pruebas de humo.
 
-    scripts/smoke-test.py             configuración + workspace en un PTY
-    scripts/smoke-test.py --ghostty   además, Ghostty real con teclas sintetizadas
+    scripts/smoke-test.py             configuración + IDE en un PTY
+    scripts/smoke-test.py --ghostty   además, vkTERM Test.app con teclas sintetizadas
 
-Modo PTY: arranca bin/vkterm sobre una copia temporal de examples/demo en un
-pseudo-terminal de 200x50 y le envía exactamente los bytes que el perfil de
-Ghostty emite para cada atajo ⌘ (leídos de `ghostty +list-keybinds`). El
-estado se comprueba con `zellij action`, procesos y archivos en disco.
+Modo PTY: arranca `bin/vkterm --here` sobre una copia temporal de
+examples/demo en un pseudo-terminal de 200x50 y le envía exactamente los
+bytes que el perfil de Ghostty emite para cada atajo ⌘ del modo IDE (leídos
+de `ghostty +list-keybinds`). El estado se comprueba con `zellij action`,
+procesos y archivos en disco. También prueba la memoria de cada carpeta,
+⌘K F (cerrar la carpeta) con su confirmación, el fin de la sesión al cerrar
+la pestaña y la integración de zsh del modo terminal (con un HOME falso).
 
-Modo --ghostty: abre vkTERM en una ventana de Ghostty (sin robarle el foco a
-la app activa, salvo un instante para ⌃Tab / ⌃⇧Tab: AppKit solo los entrega
-a la ventana principal) y entrega eventos de teclado CGEvent al proceso de
-Ghostty con scripts/send-keys.swift. Recorren Ghostty → Zellij → aplicación,
-pero NO son pulsaciones físicas: la lista manual está en docs/manual-tests.md.
-Requiere permiso de Accesibilidad para el terminal que ejecuta la prueba.
+Modo --ghostty: crea si hace falta "vkTERM Test.app" (`bin/vkterm-app install
+--test`, otro identificador que la app de uso diario), la abre con un estado
+temporal y escribe `vkterm .` en una pestaña en modo terminal. Entrega
+eventos de teclado CGEvent a su proceso con scripts/send-keys.swift (sin
+robarle el foco a la app activa, salvo un instante para ⌃Tab / ⌃⇧Tab y los
+diálogos de Ghostty: AppKit solo los entrega a la ventana principal).
+Recorren Ghostty → Zellij → aplicación, pero NO son pulsaciones físicas: la
+lista manual está en docs/manual-tests.md. Requiere permiso de Accesibilidad
+para el terminal que ejecuta la prueba y, si el repositorio está en un disco
+externo, que vkTERM Test pueda leerlo (macOS lo pregunta la primera vez).
 
 Nunca ejecuta Claude Code ni Codex, no modifica el portapapeles y no toca las
 sesiones de Zellij que ya existían. Si Zellij pide permisos para el plugin
@@ -67,8 +74,8 @@ UP, DOWN, RIGHT, LEFT, HOME = b"\x1b[A", b"\x1b[B", b"\x1b[C", b"\x1b[D", b"\x1b
 # Cabecera de un PNG: tiene bytes NUL, así que es binario.
 PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
 
-# Atajo de macOS → acción esperada en el perfil de Ghostty.
-EXPECTED_KEYBINDS = {
+# Modo IDE: atajo de macOS → acción esperada en la tabla `vkterm` del perfil.
+EXPECTED_KEYBINDS = {"vkterm/" + trigger: action for trigger, action in {
     "super+digit_1": "esc:1", "super+digit_2": "esc:2", "super+digit_3": "esc:3",
     "super+digit_4": "esc:4", "super+digit_5": "esc:5",
     "super+1": "esc:1", "super+2": "esc:2", "super+3": "esc:3",
@@ -77,16 +84,27 @@ EXPECTED_KEYBINDS = {
     "super+w": "esc:9", "super+p": "esc:0", "super+shift+p": "esc:;", "super+k>super+s": "esc:?",
     "super+k>z": "esc:z",
     "super+k>super+t": "esc:t",
+    "super+k>f": "esc:q",
     "super+alt+arrow_left": "esc:,", "super+alt+arrow_right": "esc:.",
     "ctrl+shift+tab": "esc:,", "ctrl+tab": "esc:.",
     "super+alt+arrow_up": "esc:k", "super+alt+arrow_down": "esc:j",
     "super+s": "esc:OQ", "super+arrow_left": "csi:H", "super+arrow_right": "csi:F",
     "super+c": "copy_to_clipboard:mixed|esc:c", "super+v": "paste_from_clipboard|esc:v",
     "super+z": "esc:u", "super+shift+z": "esc:y", "super+a": "esc:a", "super+f": "esc:s",
-    "super+x": "esc:x",
-}
-UNBOUND = ("super+t", "super+d", "super+shift+d")
-SHORTCUTS = {"⌘1": "super+digit_1", "⌘2": "super+digit_2", "⌘3": "super+digit_3",
+    "super+x": "esc:x", "super+shift+comma": "esc:r",
+    "super+d": "ignore", "super+shift+d": "ignore",
+}.items()}
+# Modo terminal: ⌘B ⌘J ⌘P ⌘⇧P convierten la pestaña (F13–F16 con Super, que
+# recoge config/zsh/vkterm.zsh); el resto son los de Ghostty.
+TERMINAL_KEYBINDS = {"super+b": "csi:25;9~", "super+j": "csi:26;9~",
+                     "super+p": "csi:28;9~", "super+shift+p": "csi:29;9~"}
+GHOSTTY_DEFAULTS = {"super+key_t": "new_tab", "super+shift+comma": "reload_config",
+                    "super+d": "new_split:right", "super+w": "close_surface",
+                    "super+k": "clear_screen", "super+f": "start_search", "super+digit_1": "goto_tab:1",
+                    "super+z": "undo", "super+a": "select_all", "ctrl+tab": "next_tab",
+                    "super+c": "copy_to_clipboard:mixed"}
+SHORTCUTS = {name: "vkterm/" + trigger for name, trigger in {
+             "⌘1": "super+digit_1", "⌘2": "super+digit_2", "⌘3": "super+digit_3",
              "⌘4": "super+digit_4", "⌘5": "super+digit_5", "⌘B": "super+b", "⌘J": "super+j",
              "⌥⌘B": "super+alt+b", "⌘W": "super+w", "⌘P": "super+p", "⌘⇧P": "super+shift+p",
              "⌘S": "super+s",
@@ -95,8 +113,11 @@ SHORTCUTS = {"⌘1": "super+digit_1", "⌘2": "super+digit_2", "⌘3": "super+di
              "⌘⌥↑": "super+alt+arrow_up", "⌘⌥↓": "super+alt+arrow_down",
              "⌘←": "super+arrow_left", "⌘→": "super+arrow_right",
              "⌘K ⌘S": "super+k>super+s", "⌘K Z": "super+k>z", "⌘K ⌘T": "super+k>super+t",
+             "⌘K F": "super+k>f", "⌘⇧,": "super+shift+comma",
              "⌘Z": "super+z", "⌘⇧Z": "super+shift+z", "⌘A": "super+a", "⌘F": "super+f",
-             "⌘X": "super+x", "⌘C": "super+c", "⌘V": "super+v"}
+             "⌘X": "super+x", "⌘C": "super+c", "⌘V": "super+v"}.items()}
+CONFIRM_TITLE = "Cerrar carpeta"
+TEST_APP_ID = "io.github.vk62001.vkterm.test"
 
 
 def alt(key):
@@ -115,13 +136,14 @@ def paste(text):
 class Client:
     """A Zellij client running in its own pseudo-terminal."""
 
-    def __init__(self, argv, cwd):
+    def __init__(self, argv, cwd, env=None):
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             os.chdir(cwd)
             os.environ["TERM"] = "xterm-256color"
-            # Tema y estado de Micro propios: no tocan los del usuario.
+            # Tema, estado de Micro y memoria propios: no tocan los del usuario.
             os.environ["VKTERM_STATE_DIR"] = str(Path(cwd) / "state")
+            os.environ.update(env or {})
             os.execv(argv[0], argv)
         fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
         os.kill(self.pid, signal.SIGWINCH)
@@ -202,11 +224,15 @@ class Session:
         return run("zellij", "-s", self.name, "action", *args)
 
     def panes(self):
-        # Se descartan solo los plugins de servicio (barra y zellij:link).
-        # Incluye los paneles ocultos (is_suppressed).
+        # Se descartan solo los plugins de servicio: zellij:link y la barra de
+        # estado (src/status.rs, la única que no se puede enfocar). Incluye
+        # los paneles ocultos (is_suppressed).
         return [p for p in json.loads(self.action("list-panes", "-a", "-j"))
-                if p["plugin_url"] not in ("zellij:link", "compact-bar")
-                and p["title"] != "compact-bar"]
+                if p["plugin_url"] != "zellij:link" and (p["is_selectable"] or not p["is_plugin"])]
+
+    def status_bar(self):
+        return next((p for p in json.loads(self.action("list-panes", "-a", "-j"))
+                     if p["is_plugin"] and not p["is_selectable"] and p["plugin_url"] != "zellij:link"), None)
 
     def pane(self, title):
         return next((p for p in self.panes() if p["title"] == title), None)
@@ -248,10 +274,12 @@ class Session:
                 if not p["is_plugin"] and (p.get("default_bg") or "").lower() == INACTIVE_BG}
 
     def mode(self):
-        bar = next(p for p in json.loads(self.action("list-panes", "-a", "-j"))
-                   if p["title"] == "compact-bar")
-        view = self.plugin_view(pane_id(bar))
-        return next((m for m in ("LOCKED", "NORMAL", "PANE") if m in view), "?")
+        """La barra de estado solo muestra el modo de Zellij si no es LOCKED."""
+        bar = self.status_bar()
+        view = self.plugin_view(pane_id(bar)) if bar else ""
+        if not view.strip():
+            return "?"
+        return next((m for m in ("NORMAL", "PANE", "TAB", "RESIZE", "SCROLL", "SESSION") if m in view), "LOCKED")
 
 
 def pane_id(pane):
@@ -384,18 +412,37 @@ def check_config():
     effective = ghostty_cli("+show-config")
     check("perfil efectivo: los dos Option escriben caracteres (como VS Code)",
           "macos-option-as-alt = false" in effective)
-    # El tema puede venir de config/local/theme.ghostty (⌘K ⌘T).
-    check("perfil efectivo: título y tema de vkTERM",
-          "title = vkTERM" in effective and re.search(r"^theme = \S", effective, re.M))
-    launcher = (ROOT / "bin" / "vkterm-ghostty").read_text()
-    check("el lanzador no carga ~/.config/ghostty", "--config-default-files=false" in launcher)
+    # El tema puede venir de config/local/theme.ghostty (⌘K ⌘T). Sin `title`:
+    # con él, Ghostty ignora OSC 2, con el que bin/vkterm identifica su pestaña.
+    check("perfil efectivo: tema de vkTERM, sin título fijo y sin actualizaciones propias",
+          not re.search(r"^title = ", effective, re.M) and re.search(r"^theme = \S", effective, re.M)
+          and "auto-update = off" in effective)
+    launcher = (ROOT / "scripts" / "vkterm-app-launcher.c").read_text()
+    check("vkTERM.app no carga ~/.config/ghostty",
+          "--config-default-files=false" in launcher and "config/ghostty/vkterm.ghostty" in launcher)
     binds = ghostty_keybinds()
     wrong = {t: binds.get(t) for t, a in EXPECTED_KEYBINDS.items() if binds.get(t) != a}
-    check("atajos ⌘ efectivos de Ghostty", not wrong, "distintos: %s" % wrong if wrong else
+    check("modo IDE: atajos ⌘ efectivos de la tabla vkterm", not wrong, "distintos: %s" % wrong if wrong else
           "%d atajos traducidos" % len(EXPECTED_KEYBINDS))
-    check("splits y pestañas de Ghostty desactivados", not any(t in binds for t in UNBOUND))
-    check("⌘C nunca envía Ctrl-C", binds.get("super+c", "").startswith("copy_to_clipboard"))
-    check("⌘W ya no cierra la ventana", binds.get("super+w") == "esc:9")
+    wrong = {t: binds.get(t) for t, a in TERMINAL_KEYBINDS.items() if binds.get(t) != a}
+    check("modo terminal: ⌘B ⌘J ⌘P ⌘⇧P convierten la pestaña (F13–F16 con Super)", not wrong, str(wrong or ""))
+    wrong = {t: binds.get(t) for t, a in GHOSTTY_DEFAULTS.items() if binds.get(t) != a}
+    check("modo terminal: pestañas, divisiones, buscar, limpiar y cerrar son los de Ghostty",
+          not wrong, str(wrong or ""))
+    # Con el carácter, el atajo iría al menú de Ghostty, que macOS resuelve
+    # antes que la tabla del IDE (⌘K ⌘T abría una pestaña).
+    check("⌘T y ⌘⇧, por tecla física: sin atajo en el menú, la tabla del IDE los recibe",
+          "super+t" not in binds and "super+shift+," not in binds)
+    check("⌘C nunca envía Ctrl-C", binds.get("vkterm/super+c", "").startswith("copy_to_clipboard"))
+    check("⌘W en el IDE cierra la pestaña del editor, no la de Ghostty", binds.get("vkterm/super+w") == "esc:9")
+    zellij_config = (ROOT / "config" / "zellij" / "config.kdl").read_text()
+    check("la sesión termina con su pestaña (on_force_close \"quit\", sin Detach)",
+          re.search(r'^on_force_close "quit"', zellij_config, re.M) and "Detach;" not in zellij_config)
+    zsh_ok = all(subprocess.run(["zsh", "-n", str(ROOT / "config" / "zsh" / f)]).returncode == 0
+                 for f in (".zshenv", "vkterm.zsh"))
+    check("integración de zsh del modo terminal (config/zsh) sin errores de sintaxis", zsh_ok)
+    check("plugin Lua de memoria del editor (config/micro/plugins/vkterm)",
+          (ROOT / "config" / "micro" / "plugins" / "vkterm" / "vkterm.lua").exists())
     # Los bytes que la prueba envía salen de la configuración efectiva.
     return {name: action_bytes(binds[trigger]) for name, trigger in SHORTCUTS.items()
             if trigger in binds
@@ -447,7 +494,7 @@ def check_workspace(s):
 
 def scenario_pty(cmd, tmp):
     project = new_project(tmp, "pty")
-    launcher = [str(ROOT / "bin" / "vkterm"), str(project)]
+    launcher = [str(ROOT / "bin" / "vkterm"), "--here", str(project)]
     before = sessions()
     client = Client(launcher, tmp)
     name = wait_new_session(before, timeout=60)
@@ -724,7 +771,8 @@ def background_sgr(color):
 
 
 def foreground_colors(view):
-    return set(re.findall(r"38;2;\d+;\d+;\d+", view))
+    """Colores de texto y fondo de 24 bits de un plugin (la barra de estado)."""
+    return set(re.findall(r"[34]8;2;\d+;\d+;\d+", view))
 
 
 def dimming_pty(s, client, cmd):
@@ -783,7 +831,7 @@ def shortcuts_pty(s, client, cmd):
         pattern = r"(^|\s{2})(%s)(\s{2}|$)" % re.escape(heading)
         return next((m.start(2) for r in rows if (m := re.search(pattern, r))), None)
     left = {column(h) for h in ("Paneles", "Editor", "Explorador")}
-    right = {column(h) for h in ("Agentes y Shell", "Zellij", "Teclado")}
+    right = {column(h) for h in ("Agentes y Shell", "Ventana", "Teclado")}
     check("categorías en columnas de tres, como Unity",
           len(left) == 1 and len(right) == 1 and None not in left | right and max(left) < min(right),
           "columnas %s y %s" % (sorted(left, key=str), sorted(right, key=str)))
@@ -833,7 +881,7 @@ def themes_pty(s, client, cmd, launcher, tmp):
                          s.plugin_view(pane_id(s.pane("Editor")), ansi=True))
 
     explorer = pane_id(s.pane("Explorador"))
-    bar = pane_id(next(p for p in json.loads(s.action("list-panes", "-a", "-j")) if p["title"] == "compact-bar"))
+    bar = pane_id(s.status_bar())
     default_bar = foreground_colors(s.plugin_view(bar, ansi=True))
     dark_editor = not editor_reversed()
     second = THEMES[1]
@@ -866,13 +914,12 @@ def themes_pty(s, client, cmd, launcher, tmp):
     check("Micro cambia a su esquema de tema claro", dark_editor and wait_until(editor_reversed, timeout=6))
     second_bar = foreground_colors(s.plugin_view(bar, ansi=True))
     before = sessions()
-    Client([launcher[0], "--new", launcher[1]], tmp)
+    Client(launcher[:-1] + ["--new", launcher[-1]], tmp)
     fresh = wait_new_session(before, timeout=30)
     if fresh:
         other = Session(fresh)
         grant_plugin(other)
-        other_bar = pane_id(next(p for p in json.loads(other.action("list-panes", "-a", "-j"))
-                                 if p["title"] == "compact-bar"))
+        other_bar = pane_id(wait_until(other.status_bar, timeout=10))
         check("una sesión nueva arranca con el tema guardado",
               wait_until(lambda: foreground_colors(other.plugin_view(other_bar, ansi=True)) == second_bar)
               and wait_until(lambda: background_sgr(second["inactive_bg"])
@@ -982,73 +1029,307 @@ def processes_pty(s, client, tmp):
 
 
 def sessions_pty(s, client, launcher, tmp, sleeper):
-    print("Sesiones")
-    client.send(ctrl("g"), b"o", b"d")
-    detached = wait_until(lambda: not client.alive())
-    check("Ctrl-g o d desconecta y la sesión sigue viva",
-          detached and s.name in sessions() and (sleeper is None or pid_alive(sleeper)))
-    client = Client(launcher, tmp)
-    clients = wait_until(lambda: len(s.action("list-clients").splitlines()) == 2)
-    check("el mismo comando reanuda la misma sesión", clients and (sleeper is None or pid_alive(sleeper)))
+    print("Sesiones: duran lo que su pestaña")
+    client.send(ctrl("g"), b"o", b"d", pause=1.0)
+    check("Ctrl-g o d ya no desconecta (no hay sesiones sin ventana)",
+          client.alive() and s.name in sessions())
+    client.send(ESC, pause=0.6)
     before = sessions()
-    other = Client([launcher[0], "--new", launcher[1]], tmp)
+    Client(launcher[:-1] + ["--new", launcher[-1]], tmp)
     fresh = wait_new_session(before)
     check("--new crea otra sesión sin tocar la existente",
           fresh and fresh.startswith(s.name + "-") and s.name in sessions(), fresh or "")
     if fresh:
         run("zellij", "kill-session", fresh)
-    run("zellij", "kill-session", s.name)
-    wait_until(lambda: s.name not in sessions())
+    tabs, active = micro_tabs(s), micro_status(s).split(" ")[0]
+    time.sleep(1.5)
+    # Lo que hace macOS al cerrar la pestaña de Ghostty.
+    os.kill(client.pid, signal.SIGHUP)
+    gone = wait_until(lambda: s.name not in sessions(), timeout=15)
+    check("cerrar la pestaña (SIGHUP al cliente) termina la sesión y sus procesos",
+          gone and (sleeper is None or wait_until(lambda: not pid_alive(sleeper), timeout=5)))
     before = sessions()
     client = Client(launcher, tmp)
     restarted = wait_new_session(before)
-    check("tras cerrar la sesión, el mismo comando la recrea con el mismo nombre",
-          restarted == s.name, restarted or "")
+    check("el mismo comando la vuelve a crear, con el mismo nombre", restarted == s.name, restarted or "")
     if restarted:
-        print("  Tras el reinicio:")
-        check_workspace(s)
+        ready = wait_until(lambda: set(TITLES) <= {p["title"] for p in s.panes()}, timeout=20)
+        check("… y con las pestañas del editor que tenía",
+              ready and wait_until(lambda: micro_tabs(s) == tabs and micro_status(s).startswith(active + " "),
+                                   timeout=10),
+              "%s / %s" % (micro_tabs(s).strip(), micro_status(s)[:30]))
+
+
+# ------------------------------------------------- memoria y cerrar carpeta
+
+def start_workspace(launcher, tmp, env=None):
+    """Abre el IDE con `bin/vkterm --here`; devuelve (cliente, sesión lista)."""
+    before = sessions()
+    client = Client(launcher, tmp, env)
+    name = wait_new_session(before, timeout=60)
+    if not name:
+        return client, None
+    s = Session(name)
+    if not wait_until(lambda: set(TITLES) <= {p["title"] for p in s.panes()}, timeout=30):
+        return client, None
+    grant_plugin(s)
+    wait_until(lambda: micro_status(s), timeout=10)
+    time.sleep(1.5)  # el plugin aplica la memoria al tener todos los paneles
+    return client, s
+
+
+def confirm_view(s):
+    pane = s.pane(CONFIRM_TITLE)
+    return pane and pane["is_floating"] and pane["is_focused"] and s.plugin_view(pane_id(pane))
+
+
+def ended(client, s):
+    return wait_until(lambda: not client.alive() and s.name not in sessions(), timeout=15)
+
+
+def scenario_memory(cmd, tmp):
+    print("\nMemoria de la carpeta y ⌘K F (cerrar carpeta)")
+    project = new_project(tmp, "memoria")
+    app = project / "src" / "App.tsx"
+    original = app.read_text()
+    # Un `claude` de mentira: la prueba nunca arranca los agentes de verdad.
+    fakebin = tmp / "fakebin"
+    fakebin.mkdir()
+    (fakebin / "claude").write_text("#!/bin/sh\nexec sleep 300\n")
+    (fakebin / "claude").chmod(0o755)
+    env = {"PATH": "%s:%s" % (fakebin, os.environ["PATH"])}
+    launcher = [str(ROOT / "bin" / "vkterm"), "--here", str(project)]
+    before = sessions()
+    client, s = start_workspace(launcher, tmp, env)
+    try:
+        if not s:
+            check("el IDE de la carpeta arranca", False)
+            return
+        client.send(cmd["⌘1"], RIGHT, pause=0.8)
+        client.send(cmd["⌘P"], pause=1.0)
+        client.send(b"app", pause=0.8)
+        client.send(ENTER, pause=1.5)
+        client.send(cmd["⌥⌘B"], pause=1.0)
+        client.send(cmd["⌘5"], pause=2.5)  # la memoria se guarda cada segundo
+        tabs, active = micro_tabs(s), micro_status(s).split(" ")[0]
+        memory = Path(run(str(ROOT / "bin" / "vkterm-state"), "dir", str(project),
+                          env=dict(os.environ, VKTERM_STATE_DIR=str(tmp / "state"))).strip()) / "workspace"
+        memory = memory if memory.exists() else None
+        check("la memoria se guarda en el estado local (projects/<huella>/workspace)",
+              memory and "agents=0" in memory.read_text() and "expanded=src" in memory.read_text()
+              and "focus=shell" in memory.read_text(), memory.read_text().replace("\n", " ") if memory else "")
+        client.send(cmd["⌘K F"], pause=1.0)
+        check("⌘K F sin nada que perder cierra la carpeta sin preguntar", ended(client, s))
+
+        client, s = start_workspace(launcher, tmp, env)
+        if not s:
+            check("la carpeta se vuelve a abrir", False)
+            return
+        check("al volver a abrirla, Claude Code y Codex siguen ocultos",
+              wait_until(lambda: s.hidden() == {"Claude Code", "Codex"}), str(s.hidden()), s)
+        check("… el foco vuelve al Shell", wait_until(lambda: s.focused() == "Shell"), str(s.focused()))
+        check("… src sigue desplegada en el explorador", wait_until(lambda: "▾ src" in "\n".join(s.explorer())))
+        check("… y el editor tiene las mismas pestañas, con la misma activa",
+              wait_until(lambda: micro_tabs(s) == tabs and micro_status(s).startswith(active + " ")),
+              "%s / %s" % (micro_tabs(s).strip(), micro_status(s)[:30]))
+
+        client.send(cmd["⌘2"], b"vk-unsaved ", pause=1.5)
+        client.send(cmd["⌘K F"], pause=1.0)
+        view = wait_until(lambda: confirm_view(s), timeout=6) or ""
+        check("con un archivo sin guardar, ⌘K F pregunta y dice cuál",
+              "1 archivo sin guardar" in view and "src/App.tsx" in view and "Guardar y cerrar" in view
+              and "Claude Code" not in view, " | ".join(l.strip("│ ") for l in view.splitlines()[1:6]))
+        client.send(ESC, pause=1.0)
+        check("Esc cancela: la ventana se cierra y la carpeta sigue abierta",
+              wait_until(lambda: s.pane(CONFIRM_TITLE) is None) and s.name in sessions() and client.alive())
+        client.send(cmd["⌘K F"], pause=1.0)
+        wait_until(lambda: confirm_view(s), timeout=6)
+        client.send(ENTER, pause=1.0)
+        check("«Guardar y cerrar» guarda el archivo y cierra la carpeta",
+              ended(client, s) and app.read_text().startswith("vk-unsaved "))
+        app.write_text(original)
+
+        client, s = start_workspace(launcher, tmp, env)
+        client.send(cmd["⌘2"], b"vk-discard ", pause=1.5)
+        client.send(cmd["⌘K F"], pause=1.0)
+        wait_until(lambda: confirm_view(s), timeout=6)
+        client.send(RIGHT, ENTER, pause=1.0)
+        backups = tmp / "state" / "micro" / "backups"
+        check("«Cerrar sin guardar» cierra sin tocar el disco ni dejar copias de Micro",
+              ended(client, s) and app.read_text() == original
+              and not (backups.exists() and any(backups.iterdir())))
+
+        client, s = start_workspace(launcher, tmp, env)
+        client.send(cmd["⌥⌘B"], pause=1.0)
+        s.action("write", "-p", pane_id(s.pane("Claude Code")), "13")
+        agent = wait_until(lambda: not s.pane("Claude Code")["is_held"]
+                           and run("pgrep", "-f", "sleep 300").split(), timeout=6)
+        client.send(cmd["⌘K F"], pause=1.0)
+        view = wait_until(lambda: confirm_view(s), timeout=6) or ""
+        check("con Claude Code en marcha, ⌘K F pregunta (los agentes en espera no cuentan)",
+              agent and "Claude Code, que está en marcha" in view and "Codex" not in view
+              and "[ Cerrar ]" in view, " | ".join(l.strip("│ ") for l in view.splitlines()[1:5]))
+        client.send(ENTER, pause=1.0)
+        check("«Cerrar» termina la sesión y el agente",
+              ended(client, s) and wait_until(lambda: not run("pgrep", "-f", "sleep 300").strip(), timeout=5))
+    finally:
+        for created in sessions() - before:
+            run("zellij", "kill-session", created)
+
+
+# ------------------------------------------------- integración de zsh
+
+def scenario_zsh(tmp):
+    """El modo terminal de vkTERM.app: config/zsh encadenado con la integración de
+    Ghostty, con un HOME falso cuyo .zshrc usa el modo vi."""
+    print("\nIntegración de zsh del modo terminal (HOME falso)")
+    integration = GHOSTTY_APP / "Contents" / "Resources" / "ghostty" / "shell-integration" / "zsh"
+    if not integration.is_dir():
+        check("integración de zsh de Ghostty instalada", False)
+        return
+    home, fake = tmp / "zsh-home", tmp / "zsh-vkterm"
+    (fake / "bin").mkdir(parents=True)
+    home.mkdir()
+    log = tmp / "zsh.log"
+    (home / ".zshenv").write_text("print zshenv >> %s\n" % log)
+    (home / ".zshrc").write_text("bindkey -v\nPS1='vk-prompt> '\nprint zshrc >> %s\n" % log)
+    # `vkterm` de mentira: anota cómo lo llamaron.
+    (fake / "bin" / "vkterm").write_text('#!/bin/sh\necho "vkterm $* @ $PWD" >> %s\n' % log)
+    (fake / "bin" / "vkterm").chmod(0o755)
+    project = new_project(tmp, "zsh")
+    base = {"HOME": str(home), "ZDOTDIR": str(integration), "GHOSTTY_ZSH_ZDOTDIR": str(ROOT / "config" / "zsh"),
+            "GHOSTTY_RESOURCES_DIR": str(GHOSTTY_APP / "Contents" / "Resources" / "ghostty"),
+            "VKTERM_HOME": str(fake), "TERM_PROGRAM": "ghostty"}
+    for key in ("VKTERM_USER_ZDOTDIR", "VKTERM_AUTOSTART"):
+        os.environ.pop(key, None)
+
+    def shell(extra=None):
+        client = Client(["/bin/zsh", "-i"], tmp, dict(base, **(extra or {})))
+        wait_until(lambda: "zshrc" in log.read_text(), timeout=10)
+        time.sleep(1.0)
+        return client
+
+    def logged():
+        return log.read_text() if log.exists() else ""
+    zsh = shell()
+    zsh.send(b"cd %s\r" % str(project).encode(), pause=0.8)
+    zsh.send(("print -r -- ZDOTDIR=${ZDOTDIR-unset} >> %s\r" % log).encode(), pause=0.8)
+    check("se cargan el .zshenv y el .zshrc del usuario y ZDOTDIR vuelve a su valor",
+          "zshenv\nzshrc" in logged() and "ZDOTDIR=unset" in logged(), logged().replace("\n", " ")[:120])
+    zsh.send(b"\x1b[28;9~", pause=1.5)
+    check("⌘P en el prompt (modo vi) llama a `vkterm --then quick_open .` en la carpeta",
+          wait_until(lambda: "vkterm --then quick_open . @ %s" % project in logged()), logged()[-120:])
+    zsh.send(b"\x1b[25;9~", b"\x1b[26;9~", b"\x1b[29;9~", pause=1.5)
+    check("⌘B, ⌘J y ⌘⇧P: show_sidebar, show_panel y command_palette",
+          wait_until(lambda: all("--then %s ." % a in logged()
+                                 for a in ("show_sidebar", "show_panel", "command_palette"))))
+    calls = logged().count("vkterm ")
+    zsh.send(b"cd\r", pause=0.8)
+    zsh.send(b"\x1b[28;9~", pause=1.5)
+    check("en la carpeta personal, un atajo no convierte nada", logged().count("vkterm ") == calls)
+    os.kill(zsh.pid, signal.SIGKILL)
+    nonce = "smoke%d" % os.getpid()
+    first = shell({"VKTERM_AUTOSTART": "%s:show_panel:%s" % (nonce, project)})
+    time.sleep(1.0)
+    second = shell({"VKTERM_AUTOSTART": "%s:show_panel:%s" % (nonce, project)})
+    time.sleep(1.0)
+    check("VKTERM_AUTOSTART convierte una sola pestaña, en la carpeta pedida",
+          logged().count("vkterm --then show_panel . @ %s" % project) == 2, logged()[-160:])
+    for client in (first, second):
+        os.kill(client.pid, signal.SIGKILL)
+    shutil.rmtree(Path(os.environ.get("TMPDIR", "/tmp")) / ("vkterm-autostart-" + nonce), ignore_errors=True)
 
 
 # ------------------------------------------------------------- escenario Ghostty
 
+def osa(script):
+    return run("osascript", "-e", script).strip()
+
+
+def app_terminal(expression):
+    """Propiedad de vkTERM Test.app por AppleScript (p. ej. "count of windows")."""
+    return osa('tell application id "%s" to get %s' % (TEST_APP_ID, expression))
+
+
+def type_in(terminal, text):
+    """Escribe una orden en una pestaña (como pegada) y pulsa Enter."""
+    osa('tell application id "%s" to input text "%s" to terminal id "%s"' % (TEST_APP_ID, text, terminal))
+    osa('tell application id "%s" to send key "enter" to terminal id "%s"' % (TEST_APP_ID, terminal))
+
+
+def surface_of(state):
+    found = next(state.glob("projects/*/surface"), None) if state.exists() else None
+    return dict(l.split("=", 1) for l in found.read_text().split()) if found else {}
+
+
 def scenario_ghostty(tmp):
-    print("\nGhostty (teclas sintetizadas con CGEvent; no son pulsaciones físicas)")
+    print("\nvkTERM Test.app (teclas sintetizadas con CGEvent; no son pulsaciones físicas)")
     if not GHOSTTY.exists() or not shutil.which("swiftc"):
         check("Ghostty y swiftc disponibles", False)
+        return
+    build = subprocess.run([str(ROOT / "bin" / "vkterm-app"), "install", "--test"], capture_output=True, text=True)
+    app = Path(run(str(ROOT / "bin" / "vkterm-app"), "path", "--test").strip())
+    check("vkTERM Test.app creada o al día (bin/vkterm-app install --test)",
+          build.returncode == 0 and app.is_dir(), (build.stdout or build.stderr).strip()[-90:])
+    if build.returncode != 0:
+        return
+    binary = app / "Contents" / "MacOS" / "ghostty"
+    if run("pgrep", "-f", str(binary)).split():
+        check("vkTERM Test.app estaba cerrada", False, "ciérrala (⌘Q) y repite la prueba")
         return
     keys_bin = tmp / "send-keys"
     subprocess.run(["swiftc", "-O", "-o", str(keys_bin), str(ROOT / "scripts" / "send-keys.swift")],
                    check=True, capture_output=True)
     project = new_project(tmp, "ghostty")
-    before, ghostty_before = sessions(), set(run("pgrep", "-x", "ghostty").split())
-    # Como `vkterm .` desde el Shell de otra ventana de vkTERM: con las
-    # variables de una sesión de Zellij en el entorno.
-    subprocess.run([str(ROOT / "bin" / "vkterm-ghostty"), "--new", str(project)], check=True,
-                   env=dict(os.environ, VKTERM_STATE_DIR=str(tmp / "ghostty-state"),
-                            ZELLIJ="0", ZELLIJ_SESSION_NAME="vk-otra-sesion", ZELLIJ_PANE_ID="5"))
-    pid = wait_until(lambda: int(next(iter(set(run("pgrep", "-x", "ghostty").split())
-                                           - ghostty_before))), timeout=10)
-    name = wait_new_session(before, timeout=30)
-    if not (pid and name):
-        check("Ghostty abre vkTERM", False,
-              "¿falta el permiso de macOS para que Ghostty lea el disco del repositorio?")
+    state = tmp / "ghostty-state"
+    front = frontmost_pid()
+    before = sessions()
+    subprocess.run(["open", "-a", str(app), "--env", "VKTERM_STATE_DIR=%s" % state], check=True)
+    pid = wait_until(lambda: int(run("pgrep", "-f", str(binary)).split()[0]), timeout=15)
+    windows = pid and wait_until(lambda: app_terminal("count of windows") not in ("", "0"), timeout=5)
+    if pid and not windows:
+        # Lanzada desde un proceso en segundo plano, macOS no la activa y
+        # Ghostty no abre su ventana inicial (le pasa igual a Ghostty.app); con
+        # un clic en el Dock sí la abre (manual-tests.md, K1).
+        osa('tell application id "%s" to new window' % TEST_APP_ID)
+        windows = wait_until(lambda: app_terminal("count of windows") not in ("", "0"), timeout=10)
+    if front and front != str(pid):
+        bring_to_front(front)
+    if not (pid and windows):
+        check("vkTERM Test.app abre su ventana", False,
+              "¿falta el permiso de macOS para que vkTERM Test lea el disco del repositorio?")
         if pid:
             os.kill(pid, signal.SIGTERM)
         return
-    s = Session(name)
     try:
         args = run("ps", "-o", "command=", "-p", str(pid))
-        check("Ghostty arranca con el perfil de vkTERM y sin la config global",
+        check("la app arranca con el perfil de vkTERM y sin la config global",
               "--config-default-files=false" in args and str(PROFILE) in args)
-        check("cliente de Zellij conectado desde Ghostty",
+        terminal = app_terminal("id of focused terminal of selected tab of front window")
+        type_in(terminal, "cd %s && vkterm ." % project)
+        name = wait_new_session(before, timeout=40)
+        check("`vkterm .` en una pestaña en modo terminal la convierte en el IDE, en el sitio",
+              name and surface_of(state).get("id") == terminal and app_terminal("count of windows") == "1",
+              str(surface_of(state)))
+        if not name:
+            return
+        s = Session(name)
+        check("cliente de Zellij conectado desde la pestaña",
               wait_until(lambda: len(s.action("list-clients").splitlines()) == 2, timeout=10))
         if not check_workspace(s):
             return
-        keyboard_ghostty(s, GhosttyKeys(keys_bin, pid), project, pid)
+        keys = GhosttyKeys(keys_bin, pid)
+        keyboard_ghostty(s, keys, project, pid)
+        terminal_mode_ghostty(s, keys, project, pid, terminal, state, tmp)
     finally:
-        run("zellij", "kill-session", name)
+        for created in sessions() - before:
+            run("zellij", "kill-session", created)
+        # SIGTERM y no «quit»: Ghostty pregunta antes de salir si queda algún
+        # proceso en marcha, y el diálogo bloquearía AppleScript.
+        time.sleep(1.0)
+        os.kill(pid, signal.SIGTERM)
         if not wait_until(lambda: not pid_alive(pid), timeout=10):
-            os.kill(pid, signal.SIGTERM)
+            os.kill(pid, signal.SIGKILL)
 
 
 def keyboard_ghostty(s, keys, project, pid):
@@ -1157,15 +1438,24 @@ def keyboard_ghostty(s, keys, project, pid):
     front = frontmost_pid()
     bring_to_front(pid)
     time.sleep(0.8)
+    # macOS no deja que un proceso en segundo plano active otra app (por
+    # ejemplo, si quien está al frente es otra y no hay nadie delante): sin la
+    # ventana principal, ⌃Tab no llega y la comprobación se omite.
+    activated = frontmost_pid() == str(pid)
     keys.send("ctrl+tab", pause=0.6)
     tab = wait_until(lambda: micro_status(s).startswith(DEMO_FILE + " "), timeout=3)
     keys.send("ctrl+shift+tab", pause=0.6)
     shift_tab = wait_until(lambda: micro_status(s).startswith("src/App.tsx "), timeout=3)
     if front and front != str(pid):
         bring_to_front(front)
-    check("⌘⌥← / ⌘⌥→ y ⌃Tab / ⌃⇧Tab cambian de pestaña",
-          previous and following and tab and shift_tab,
-          f"⌘⌥←={previous} ⌘⌥→={following} ⌃Tab={tab} ⌃⇧Tab={shift_tab}: {micro_status(s)[:40]}")
+    check("⌘⌥← / ⌘⌥→ cambian de pestaña", previous and following,
+          f"⌘⌥←={previous} ⌘⌥→={following}: {micro_status(s)[:40]}")
+    if activated:
+        check("⌃Tab / ⌃⇧Tab cambian de pestaña", tab and shift_tab,
+              f"⌃Tab={tab} ⌃⇧Tab={shift_tab}: {micro_status(s)[:40]}")
+    else:
+        check("⌃Tab / ⌃⇧Tab (omitido: macOS no dejó traer la app al frente)", True)
+        wait_until(lambda: micro_status(s).startswith("src/App.tsx "), timeout=1)
     keys.send("cmd+lopt+left", pause=0.6)
     wait_until(lambda: micro_status(s).startswith(DEMO_FILE + " "), timeout=3)
 
@@ -1218,6 +1508,82 @@ def keyboard_ghostty(s, keys, project, pid):
           "%s → %s → %s" % (start, word, column()))
 
 
+def terminal_mode_ghostty(s, keys, project, pid, terminal, state, tmp):
+    print("Modo terminal ⇄ modo IDE")
+    keys.send("cmd+k", "f", pause=1.5)
+    title = lambda: app_terminal('name of terminal id "%s"' % terminal)
+    check("⌘K F vuelve al shell de antes: sin sesión ni modo IDE",
+          wait_until(lambda: s.name not in sessions() and not surface_of(state), timeout=10)
+          and wait_until(lambda: s.name not in title(), timeout=5), title())
+    before = sessions()
+    keys.send("cmd+p", pause=1.0)
+    name = wait_new_session(before, timeout=40)
+    s = Session(name) if name else s
+    palette = name and wait_until(lambda: (p := s.pane(FILES_TITLE)) and p["is_floating"] and p["is_focused"],
+                                  timeout=20)
+    check("⌘P en el prompt convierte la pestaña y abre la búsqueda de archivos", palette, session=s)
+    if not name:
+        return
+    keys.send("esc", pause=1.0)
+    tabs = app_terminal("count of tabs of front window")
+    keys.send("cmd+t", pause=2.0)
+    new = app_terminal("id of focused terminal of selected tab of front window")
+    cwd = wait_until(lambda: app_terminal('working directory of terminal id "%s"' % new), timeout=5) or ""
+    check("⌘T en el IDE abre una pestaña de Ghostty en modo terminal, en la carpeta del proyecto",
+          app_terminal("count of tabs of front window") == str(int(tabs) + 1) and new != terminal
+          and os.path.realpath(cwd) == os.path.realpath(project), cwd)
+    keys.send("cmd+w", pause=2.0)
+    check("⌘W en esa pestaña (modo terminal) la cierra, como Ghostty",
+          app_terminal("count of tabs of front window") == tabs and s.name in sessions())
+    osa('tell application id "%s" to focus terminal id "%s"' % (TEST_APP_ID, terminal))
+    front = frontmost_pid()
+    if front and front != str(pid):
+        bring_to_front(front)
+    time.sleep(0.8)
+    keys.send("cmd+shift+comma", pause=3.5)
+    keys.send("cmd+b", pause=1.0)
+    hidden = wait_until(lambda: s.hidden() == {"Explorador"}, timeout=3)
+    keys.send("cmd+b", pause=1.0)
+    check("tras recargar la configuración (⌘⇧,), la pestaña sigue en modo IDE", hidden, session=s)
+    # Como desde iTerm: fuera de vkTERM.app (VKTERM_APP_ID solo elige la app de pruebas).
+    env = dict(os.environ, VKTERM_APP_ID=TEST_APP_ID, VKTERM_STATE_DIR=str(state), TERM_PROGRAM="iTerm.app")
+    env.pop("ZELLIJ", None)
+    before = sessions()
+    subprocess.run([str(ROOT / "bin" / "vkterm"), str(project)], env=env, timeout=30)
+    time.sleep(1.5)
+    check("`vkterm` sobre la misma carpeta desde otro terminal enfoca su pestaña",
+          sessions() == before and app_terminal("count of windows") == "1")
+    other = new_project(tmp, "ghostty-otra")
+    subprocess.run([str(ROOT / "bin" / "vkterm"), str(other)], env=env, timeout=30)
+    if front and front != str(pid):
+        bring_to_front(front)
+    fresh = wait_new_session(before, timeout=40)
+    check("`vkterm OTRA` desde otro terminal abre una ventana nueva ya convertida",
+          fresh and app_terminal("count of windows") == "2", fresh or "")
+    if fresh:
+        window = app_terminal("id of front window")
+        osa('tell application id "%s" to close window (window id "%s")' % (TEST_APP_ID, window))
+        gone = wait_until(lambda: fresh not in sessions(), timeout=6)
+        if not gone:
+            # Si Ghostty pregunta (Close Window?), Enter acepta. Solo si sigue
+            # abierta: si no, Enter llegaría al editor de la otra ventana.
+            bring_to_front(pid)
+            time.sleep(0.8)
+            keys.send("enter", pause=1.0)
+            if front and front != str(pid):
+                bring_to_front(front)
+            gone = wait_until(lambda: fresh not in sessions(), timeout=15)
+        check("cerrar la ventana del IDE termina su sesión", gone)
+    # Al cerrar una ventana con la app en segundo plano, la otra no pasa a ser
+    # la activa: se enfoca su pestaña.
+    osa('tell application id "%s" to focus terminal id "%s"' % (TEST_APP_ID, terminal))
+    if front and front != str(pid):
+        bring_to_front(front)
+    time.sleep(0.8)
+    keys.send("cmd+k", "f", pause=1.5)
+    check("⌘K F cierra la última carpeta", wait_until(lambda: s.name not in sessions(), timeout=10))
+
+
 def main():
     if os.environ.get("ZELLIJ"):
         sys.exit("smoke-test: ejecútalo fuera de Zellij.")
@@ -1229,6 +1595,8 @@ def main():
     try:
         cmd = check_config()
         scenario_pty(cmd, tmp)
+        scenario_memory(cmd, tmp)
+        scenario_zsh(tmp)
         if "--ghostty" in sys.argv[1:]:
             scenario_ghostty(tmp)
     finally:

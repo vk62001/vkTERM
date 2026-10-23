@@ -1,5 +1,29 @@
 # Próximos pasos: GitHub y plugins
 
+## 0. Modo terminal ⇄ IDE (versión 0.2.0, 23-10-2026, rama `modo-terminal`)
+
+vkTERM pasa a ser el terminal de todos los días (vkTERM.app) y `vkterm .`
+convierte la pestaña en el IDE. La Fase 2 queda en pausa: este trabajo se
+entrega de una vez, sin fases. Detalle en [architecture.md](architecture.md)
+(«Modo terminal y modo IDE») y [keybindings.md](keybindings.md).
+
+Pendiente:
+
+1. **Fusionar `modo-terminal` en `main`** cuando la lista manual esté
+   hecha. La rama está en GitHub; los cambios, en [CHANGELOG.md](../CHANGELOG.md).
+2. **Abrir vkTERM.app** (ya creada en ~/Applications) desde el Dock o
+   Finder. macOS pedirá acceso al disco externo; pulsa Permitir. Comprueba
+   que abre una ventana: desde un proceso en segundo plano, ni Ghostty.app
+   ni su copia abren la ventana inicial, porque macOS no los activa.
+3. **Lista manual** con el teclado físico: secciones K (modo terminal),
+   L (⌘K F) y M (memoria), además de C2 (⌃Tab en el IDE, que las pruebas
+   automáticas no pueden comprobar sin traer la ventana al frente):
+   [manual-tests.md](manual-tests.md).
+4. `bin/vkterm-app install --link` si quieres que `~/.local/bin/vkterm`
+   apunte a `bin/vkterm` (hoy apunta a `bin/vkterm-ghostty`, que ahora solo
+   le pasa los argumentos).
+5. Después de cada actualización de Ghostty: `bin/vkterm-app install`.
+
 Estado al 21-10-2026 (noche). Lo hecho esta noche está en
 [phase-1-report.md](phase-1-report.md), secciones 10 a 12:
 

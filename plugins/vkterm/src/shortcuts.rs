@@ -66,14 +66,15 @@ pub const CATEGORIES: &[Category] = &[
         ],
     },
     Category {
-        name: "Zellij",
+        name: "Ventana",
         entries: &[
-            ("Ctrl g", "Modo normal (Esc vuelve a LOCKED)"),
+            ("⌘K  F", "Cerrar la carpeta y volver al terminal"),
+            ("⌘T  ⌘N", "Pestaña / ventana nueva en modo terminal"),
+            ("⌘⇧,", "Recargar la configuración de Ghostty"),
+            ("Ctrl g", "Modo normal de Zellij (Esc vuelve a LOCKED)"),
             ("Ctrl g  p", "Paneles: n nuevo, f ampliar"),
-            ("Ctrl g  t", "Pestañas: n nueva, x cerrar"),
-            ("Ctrl g  r", "Redimensionar con h j k l"),
+            ("Ctrl g  t", "Pestañas de Zellij: n nueva, x cerrar"),
             ("Ctrl g  s", "Desplazar la salida (f busca)"),
-            ("Ctrl g  o d", "Salir dejando la sesión abierta"),
         ],
     },
     Category {

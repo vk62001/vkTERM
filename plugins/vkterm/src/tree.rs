@@ -239,6 +239,32 @@ impl Tree {
         let max = self.rows().len().saturating_sub(height) as isize;
         self.scroll = (self.scroll as isize + delta).clamp(0, max.max(0)) as usize;
     }
+
+    /// Carpetas desplegadas, de fuera hacia dentro (para la memoria).
+    pub fn expanded_dirs(&self) -> Vec<PathBuf> {
+        self.expanded.iter().cloned().collect()
+    }
+
+    pub fn selected_path(&self) -> Option<PathBuf> {
+        self.selected.clone()
+    }
+
+    /// Vuelve a desplegar las carpetas de la memoria y la selección. Devuelve
+    /// las carpetas que hay que leer del disco, de fuera hacia dentro: cada
+    /// una se ve cuando está leída la anterior. Las que ya no existen las
+    /// quita el plugin con `forget` al no poder leerlas.
+    pub fn restore(&mut self, expanded: &[PathBuf], selected: Option<PathBuf>) -> Vec<PathBuf> {
+        let mut dirs: Vec<PathBuf> = expanded.to_vec();
+        dirs.sort_by_key(|d| d.components().count());
+        dirs.dedup();
+        for dir in &dirs {
+            self.expanded.insert(dir.clone());
+        }
+        if selected.is_some() {
+            self.selected = selected;
+        }
+        dirs.into_iter().filter(|d| !self.is_loaded(d)).collect()
+    }
 }
 
 #[cfg(test)]
@@ -336,6 +362,29 @@ mod tests {
         let mut t = demo();
         assert_eq!(t.click(3), Action::Open(PathBuf::from("README.md")));
         assert_eq!(t.click(99), Action::None);
+    }
+
+    #[test]
+    fn restaurar_carpetas_y_seleccion() {
+        let mut t = demo();
+        let to_load = t.restore(
+            &[PathBuf::from("src/app"), PathBuf::from("src"), PathBuf::from("Build")],
+            Some(PathBuf::from("src/main.rs")),
+        );
+        // src ya estaba leída; las demás se leen de fuera hacia dentro.
+        assert_eq!(to_load, [PathBuf::from("Build"), PathBuf::from("src/app")]);
+        assert_eq!(names(&t), ["Build", "src", "  app", "  Lib.rs", "  main.rs", ".vkterm", "README.md"]);
+        assert_eq!(t.selected().unwrap().path, PathBuf::from("src/main.rs"));
+        assert_eq!(t.expanded_dirs(), [PathBuf::from("Build"), PathBuf::from("src"), PathBuf::from("src/app")]);
+    }
+
+    #[test]
+    fn restaurar_una_carpeta_borrada() {
+        let mut t = demo();
+        t.restore(&[PathBuf::from("vieja")], Some(PathBuf::from("vieja/x.rs")));
+        t.forget(Path::new("vieja")); // el plugin no pudo leerla
+        assert!(t.expanded_dirs().is_empty());
+        assert_eq!(t.selected().unwrap().path, PathBuf::from("Build"));
     }
 
     #[test]

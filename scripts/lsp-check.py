@@ -55,7 +55,7 @@ class Lsp:
         self.project = Path(project)
         self.baseline = set(self._servers())
         before = m.sessions()
-        self.client = m.Client([str(ROOT / "bin/vkterm"), str(project), open_file], self.tmp)
+        self.client = m.Client([str(ROOT / "bin/vkterm"), "--here", str(project), open_file], self.tmp)
         self.name = m.wait_new_session(before, prefix="vk-", timeout=60)
         self.s = m.Session(self.name)
         m.grant_plugin(self.s)

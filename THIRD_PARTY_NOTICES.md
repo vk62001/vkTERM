@@ -11,7 +11,7 @@ licencia, para cuando se haga un fork o se empaquete una distribución.
 | [Zellij](https://github.com/zellij-org/zellij) 0.45.1 | Gestor de paneles, sesiones y plugins | MIT | Homebrew (`zellij`) |
 | [zellij-tile](https://crates.io/crates/zellij-tile) 0.45.1 y zellij-utils | API de plugins; se compila dentro de `vkterm.wasm` | MIT | crates.io (`plugins/vkterm/Cargo.lock`) |
 | [Micro](https://github.com/micro-editor/micro) 2.0.15 | Editor | MIT | Homebrew (`micro`) |
-| [Ghostty](https://github.com/ghostty-org/ghostty) 1.3.1 | Terminal gráfica | MIT | `/Applications/Ghostty.app` |
+| [Ghostty](https://github.com/ghostty-org/ghostty) 1.3.1 | Terminal gráfica. vkTERM.app es una copia local de la Ghostty.app instalada (otro nombre, icono e identificador; el mismo binario), que crea `bin/vkterm-app` en cada equipo y no se versiona ni se distribuye | MIT | `/Applications/Ghostty.app` |
 | [Codex CLI](https://github.com/openai/codex) | Proceso CLI en un panel (no se distribuye) | Apache-2.0 | Instalación del usuario |
 | Claude Code | Proceso CLI en un panel (no se distribuye) | Propietaria (términos de Anthropic) | Instalación del usuario |
 
@@ -58,6 +58,9 @@ crates MPL-2.0.
   [µlsp](https://github.com/Andriamanitra/mlsp), y `config/lsp/patches/`:
   cambios sobre su `main.lua` (`01-format-on-save.patch` es la PR #72 del
   propio proyecto). Copyright (c) 2023 Andriamanitra. Licencia MIT.
+- `config/zsh/.zshenv`: el encadenado de ZDOTDIR sigue el de la integración
+  de zsh de Ghostty (`shell-integration/zsh/.zshenv`, basada a su vez en la
+  de kitty, GPL-3.0), compatible con la licencia de vkTERM.
 - `plugins/vkterm/src/themes.rs`: los colores del atenuado se eligieron a
   partir de las paletas de esos temas (p. ej. overlay0 y crust de Catppuccin,
   MIT).

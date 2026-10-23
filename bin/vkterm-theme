@@ -4,6 +4,7 @@
 #   vkterm-theme current                          id del tema guardado (vacío: el predeterminado)
 #   vkterm-theme set ID GHOSTTY ZELLIJ MICRO      lo guarda y cambia Ghostty y Micro
 #   vkterm-theme value CLAVE                      zellij o micro del tema guardado
+#   vkterm-theme reload                           Ghostty relee la configuración (⌘⇧, en el IDE)
 #
 # Lo usa el plugin vkterm (la tabla de temas está en
 # plugins/vkterm/src/themes.rs); el tema de Zellij lo cambia el propio plugin.
@@ -22,37 +23,34 @@ value() {
 }
 
 # Ghostty que muestra esta sesión: se sube por los procesos padre de sus
-# clientes de Zellij. SIGUSR2 le hace releer la configuración. Las demás
-# ventanas de vkTERM cambian al volver a abrirlas.
+# clientes de Zellij. SIGUSR2 le hace releer la configuración: todas sus
+# ventanas cambian de tema.
+#
+# Al recargar, Ghostty vacía las tablas de atajos: las pestañas en modo IDE
+# volverían al modo terminal. bin/vkterm-surface les devuelve la suya cuando
+# la recarga ha terminado (dos intentos; activar una tabla ya activa no hace
+# nada). Sin segundo plano: Zellij termina los procesos que deja un comando
+# del plugin, y el plugin no espera este resultado.
 reload_ghostty() {
   [[ -n ${ZELLIJ_SESSION_NAME:-} ]] || return 0
-  local pid comm
+  local pid comm reloaded=0
   for pid in $(pgrep -f -- "zellij .*(--session|attach) $ZELLIJ_SESSION_NAME( |\$)"); do
     while (( pid > 1 )); do
       comm=$(ps -o comm= -p $pid 2>/dev/null) || break
       if [[ ${comm:t} == ghostty ]]; then
         kill -USR2 $pid
+        reloaded=1
         break
       fi
       pid=$(ps -o ppid= -p $pid | tr -d ' ')
     done
   done
-}
-
-# El Micro del panel Editor cambia de esquema con su línea de comandos, como
-# en bin/vkterm-open (Esc, pausa, Ctrl-E, comando, Enter).
-set_micro_colorscheme() {
-  [[ -n ${ZELLIJ_SESSION_NAME:-} ]] || return 0
-  local editor id
-  editor=$(zellij action list-panes -a -j 2>/dev/null | jq -r '
-    first(.[] | select(.title == "Editor" and (.is_plugin | not) and (.exited | not))) | .id')
-  [[ -n $editor && $editor != null ]] || return 0
-  id=terminal_$editor
-  zellij action write -p $id 27
-  sleep 0.1
-  zellij action write -p $id 5
-  zellij action write-chars -p $id "set colorscheme $1"
-  zellij action write -p $id 13
+  if (( reloaded )); then
+    sleep 0.8
+    vkterm-surface reactivate
+    sleep 1.2
+    vkterm-surface reactivate
+  fi
 }
 
 case ${1:-} in
@@ -61,6 +59,9 @@ case ${1:-} in
     ;;
   value)
     value ${2:?clave}
+    ;;
+  reload)
+    reload_ghostty
     ;;
   set)
     (( $# == 5 )) || { print -u2 "uso: vkterm-theme set ID GHOSTTY ZELLIJ MICRO"; exit 2; }
@@ -75,11 +76,11 @@ case ${1:-} in
     print -r -- "theme = $ghostty" > $state/theme.ghostty
     reload_ghostty
     if [[ $micro != ${previous_micro:-vkterm} ]]; then
-      set_micro_colorscheme $micro
+      vkterm-micro "set colorscheme $micro" || true
     fi
     ;;
   *)
-    print -u2 "uso: vkterm-theme current | set ID GHOSTTY ZELLIJ MICRO | value CLAVE"
+    print -u2 "uso: vkterm-theme current | set ID GHOSTTY ZELLIJ MICRO | value CLAVE | reload"
     exit 2
     ;;
 esac

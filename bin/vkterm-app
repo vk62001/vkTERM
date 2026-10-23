@@ -1,0 +1,191 @@
+#!/bin/zsh
+# vkTERM — crea vkTERM.app, la app del Dock: una copia local de Ghostty.app con
+# su propio nombre, icono e identificador que abre el perfil de vkTERM.
+#
+#   bin/vkterm-app install [--test] [--force] [--link]
+#   bin/vkterm-app status  [--test]
+#   bin/vkterm-app path    [--test]       ruta de la app (la usan las pruebas)
+#   bin/vkterm-app uninstall [--test]
+#
+#   --test   "vkTERM Test.app" (otro identificador) en ~/Library/Caches/vkterm,
+#            para scripts/smoke-test.py --ghostty sin tocar la app de uso diario
+#   --force  la vuelve a crear aunque esté al día
+#   --link   además, ~/.local/bin/vkterm → bin/vkterm (el comando `vkterm .`)
+#
+# Por qué una copia y no Ghostty.app tal cual:
+#   - AppleScript cambia el modo de cada pestaña (bin/vkterm-surface) y
+#     necesita un identificador propio: con el de Ghostty se confundiría con el
+#     Ghostty personal del usuario si también está abierto.
+#   - macOS lanza las apps sin argumentos: el ejecutable principal es un
+#     lanzador (scripts/vkterm-app-launcher.c) que arranca el `ghostty` real
+#     con el perfil config/ghostty/vkterm.ghostty.
+#
+# La copia se vuelve a firmar en local (ad hoc) y sin la marca de cuarentena
+# que trae la Ghostty.app descargada: con la firma original modificada,
+# Gatekeeper la rechazaría. Cada vez que se actualice Ghostty (o se mueva el
+# repositorio) hay que volver a ejecutar `install`; macOS puede volver a pedir
+# los permisos de vkTERM (carpetas, Automatización). scripts/doctor.sh avisa
+# si la app se quedó atrás.
+emulate -L zsh
+setopt err_exit no_unset pipe_fail extended_glob
+
+script=${0:A}
+vkterm_home=${script:h:h}
+ghostty_app=${VKTERM_GHOSTTY_APP:-/Applications/Ghostty.app}
+PB=/usr/libexec/PlistBuddy
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+
+say() { print -r -- "vkterm-app: $*" }
+fail() { print -u2 -r -- "vkterm-app: $*"; exit 1 }
+
+command=${1:-}
+(( $# )) && shift
+test_app=0 force=0 link=0
+for arg; do
+  case $arg in
+    --test) test_app=1 ;;
+    --force) force=1 ;;
+    --link) link=1 ;;
+    *) fail "opción desconocida: $arg" ;;
+  esac
+done
+
+if (( test_app )); then
+  app_dir=${VKTERM_TEST_APP_DIR:-$HOME/Library/Caches/vkterm}
+  app_name="vkTERM Test" app_id=io.github.vk62001.vkterm.test
+else
+  app_dir=${VKTERM_APP_DIR:-$HOME/Applications}
+  app_name=vkTERM app_id=io.github.vk62001.vkterm
+fi
+app=$app_dir/$app_name.app
+
+plist_value() {  # $1 Info.plist, $2 clave
+  $PB -c "Print :$2" $1 2>/dev/null || true
+}
+
+ghostty_version() {
+  plist_value $ghostty_app/Contents/Info.plist CFBundleShortVersionString
+}
+
+version_ok() {  # $1 >= $2 (x.y.z)
+  [[ $(printf '%s\n%s\n' $2 $1 | sort -V | head -1) == $2 ]]
+}
+
+# Huella de lo que define la app: si no cambia, `install` no la rehace (y macOS
+# conserva los permisos concedidos a esa firma).
+stamp() {
+  {
+    print -r -- $vkterm_home $app_id
+    plist_value $ghostty_app/Contents/Info.plist CFBundleVersion
+    cat $vkterm_home/scripts/vkterm-app-launcher.c $vkterm_home/docs/assets/vkterm.icns $script
+  } | md5
+}
+
+running() {
+  pgrep -f -- "$app/Contents/MacOS/ghostty" >/dev/null 2>&1
+}
+
+install_app() {
+  [[ -d $ghostty_app ]] || fail "no se encuentra Ghostty en $ghostty_app (VKTERM_GHOSTTY_APP)."
+  local version=$(ghostty_version)
+  version_ok ${version:-0} 1.3.0 || fail "hace falta Ghostty 1.3 o posterior (instalado: ${version:-desconocido})."
+  (( $+commands[clang] )) || fail "falta clang (xcode-select --install)."
+  local wanted=$(stamp)
+  if (( ! force )) && [[ -d $app && $(plist_value $app/Contents/Info.plist VKTermBuild) == $wanted ]]; then
+    say "$app ya está al día (Ghostty $version)."
+    return
+  fi
+  running && fail "$app_name está abierto: ciérralo (⌘Q) y vuelve a ejecutar install."
+
+  mkdir -p $app_dir
+  local tmp=$app_dir/.$app_name.app.tmp
+  rm -rf $tmp
+  say "copiando Ghostty $version…"
+  ditto $ghostty_app $tmp
+  local info=$tmp/Contents/Info.plist
+  # Sin el icono del catálogo de Ghostty (tiene prioridad sobre
+  # CFBundleIconFile), sin su plugin del Dock (lee las preferencias de
+  # Ghostty) y sin sus servicios ni tipos exportados (los duplicaría).
+  $PB -c "Set :CFBundleIdentifier $app_id" \
+      -c "Set :CFBundleName $app_name" \
+      -c "Set :CFBundleDisplayName $app_name" \
+      -c "Set :CFBundleExecutable vkTERM" \
+      -c "Set :CFBundleIconFile vkterm" \
+      -c "Delete :CFBundleIconName" \
+      -c "Delete :NSDockTilePlugIn" \
+      -c "Delete :NSServices" \
+      -c "Delete :UTExportedTypeDeclarations" \
+      -c "Add :SUEnableAutomaticChecks bool false" \
+      -c "Add :VKTermHome string $vkterm_home" \
+      -c "Add :VKTermGhosttyVersion string $version" \
+      -c "Add :VKTermBuild string $wanted" \
+      $info
+  rm -rf $tmp/Contents/PlugIns/DockTilePlugin.plugin
+  cp $vkterm_home/docs/assets/vkterm.icns $tmp/Contents/Resources/vkterm.icns
+  clang -O2 -Wall -framework CoreFoundation -o $tmp/Contents/MacOS/vkTERM \
+    $vkterm_home/scripts/vkterm-app-launcher.c
+  # Firma local con los mismos permisos (entitlements) que Ghostty: primero lo
+  # anidado, después el bundle.
+  local entitlements=$(mktemp -t vkterm-entitlements)
+  codesign -d --entitlements - --xml $ghostty_app > $entitlements 2>/dev/null
+  for code in $tmp/Contents/Frameworks/*.framework(N) $tmp/Contents/MacOS/ghostty $tmp; do
+    codesign --force --sign - --entitlements $entitlements $code 2>/dev/null \
+      || { rm -f $entitlements; fail "no se pudo firmar ${code:t}"; }
+  done
+  rm -f $entitlements
+  xattr -dr com.apple.quarantine $tmp
+  codesign --verify --deep --strict $tmp || fail "la firma de la copia no es válida."
+
+  rm -rf $app
+  mv $tmp $app
+  $LSREGISTER -f $app >/dev/null 2>&1 || true
+  say "creada $app (Ghostty $version)."
+}
+
+link_command() {
+  local bin=$HOME/.local/bin
+  mkdir -p $bin
+  ln -sfn $vkterm_home/bin/vkterm $bin/vkterm
+  say "~/.local/bin/vkterm → bin/vkterm"
+  [[ :$PATH: == *:$bin:* ]] || say "añade ~/.local/bin al PATH para usar \`vkterm .\`."
+}
+
+status_app() {
+  local ghostty=$(ghostty_version)
+  if [[ ! -d $app ]]; then
+    print "$app_name.app: no instalada ($app). Ejecuta: bin/vkterm-app install${${test_app:#0}:+ --test}"
+    return 1
+  fi
+  local info=$app/Contents/Info.plist
+  local built=$(plist_value $info VKTermGhosttyVersion) home=$(plist_value $info VKTermHome)
+  print "$app_name.app: $app"
+  print "  Ghostty de la copia: $built · instalado: ${ghostty:-no encontrado}"
+  print "  repositorio: $home"
+  local ok=0
+  if [[ $(plist_value $info VKTermBuild) != $(stamp) ]]; then
+    ok=1
+    print "  desactualizada: ejecuta bin/vkterm-app install${${test_app:#0}:+ --test}"
+  fi
+  running && print "  abierta ahora"
+  return $ok
+}
+
+case $command in
+  install)
+    install_app
+    if (( link )); then link_command; fi
+    ;;
+  status) status_app ;;
+  path) print -r -- $app ;;
+  uninstall)
+    [[ -d $app ]] || { say "no estaba instalada."; exit 0 }
+    running && fail "$app_name está abierto: ciérralo (⌘Q) antes."
+    $LSREGISTER -u $app >/dev/null 2>&1 || true
+    rm -rf $app
+    say "eliminada $app"
+    ;;
+  *)
+    print -u2 "uso: vkterm-app install [--test] [--force] [--link] | status [--test] | path [--test] | uninstall [--test]"
+    exit 2
+    ;;
+esac

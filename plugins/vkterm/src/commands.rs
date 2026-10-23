@@ -22,6 +22,7 @@ pub const COMMANDS: &[Command] = &[
     cmd("Archivo: Abrir archivo…", "⌘P", "palette_files", ""),
     cmd("Archivo: Nuevo archivo", "", "editor_key", "new_tab"),
     cmd("Archivo: Guardar", "⌘S", "editor_key", "save"),
+    cmd("Archivo: Cerrar carpeta", "⌘K F", "close_folder", ""),
     cmd("Ver: Mostrar u ocultar el explorador", "⌘B", "toggle_sidebar", ""),
     cmd("Ver: Mostrar u ocultar el Shell", "⌘J", "toggle_panel", ""),
     cmd("Ver: Mostrar u ocultar Claude Code y Codex", "⌥⌘B", "toggle_agents", ""),
@@ -40,6 +41,7 @@ pub const COMMANDS: &[Command] = &[
     cmd("Editor: Seleccionar todo", "⌘A", "editor_key", "select_all"),
     cmd("Editor: Buscar en el archivo", "⌘F", "editor_key", "find"),
     cmd("Preferencias: Tema de color", "⌘K ⌘T", "open_window", "themes"),
+    cmd("Preferencias: Recargar la configuración de Ghostty", "⌘⇧,", "reload_config", ""),
     cmd("Ayuda: Atajos de teclado", "⌘K ⌘S", "open_window", "shortcuts"),
     cmd("Ayuda: Paleta de comandos", "⌘⇧P", "palette_commands", ""),
 ];

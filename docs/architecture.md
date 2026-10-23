@@ -1,23 +1,32 @@
-# Arquitectura de vkTERM — Fase 1 (interfaz tipo VS Code)
+# Arquitectura de vkTERM
 
 vkTERM combina componentes estables sin forks: Ghostty, Zellij y Micro. A eso
-añade un plugin propio de Zellij, `vkterm` (Rust → WebAssembly). El plugin
-hace de explorador y de controlador del workspace.
+añade un plugin propio de Zellij, `vkterm` (Rust → WebAssembly), que hace de
+explorador y de controlador del workspace, y una app de macOS, vkTERM.app,
+que es una copia local de Ghostty.
 
 ## Vista general
 
 ```
-Ghostty (perfil config/ghostty/vkterm.ghostty: capa ⌘, ⌥ = caracteres)
- └─ /usr/bin/login → zsh -l                       PATH completo del usuario
-     └─ bin/vkterm [--new] <proyecto> [archivo]    compila el plugin si hace falta; sesión por proyecto
-         └─ zellij client ⇄ zellij server          --config-dir config/local/zellij/<huella>
-             ├─ Explorador 20%     plugin vkterm (plugins/vkterm): árbol + controlador
-             ├─ Editor             bin/vkterm-editor → micro (pestañas)
-             ├─ Shell (abajo 30%)  bin/vkterm-shell → $SHELL
-             └─ Barra derecha 25%
-                 ├─ Claude Code    claude  (start_suspended: espera Enter)
-                 └─ Codex          codex   (start_suspended: espera Enter)
+vkTERM.app (copia de Ghostty.app; lanzador scripts/vkterm-app-launcher.c)
+ │  perfil config/ghostty/vkterm.ghostty: tabla por defecto (modo terminal) + tabla `vkterm` (modo IDE)
+ └─ /usr/bin/login → zsh -l del usuario            ZDOTDIR=config/zsh: integración de vkTERM
+     │                                              MODO TERMINAL
+     └─ `vkterm .` o ⌘B/⌘J/⌘P/⌘⇧P en el prompt
+         └─ bin/vkterm (despachador)               activa la tabla `vkterm` en su pestaña (AppleScript)
+             └─ bin/vkterm-workspace <proyecto>     MODO IDE: compila el plugin si hace falta
+                 └─ zellij client ⇄ zellij server   --config-dir config/local/zellij/<huella>
+                     ├─ Explorador 20%     plugin vkterm (plugins/vkterm): árbol + controlador
+                     ├─ Editor             bin/vkterm-editor → micro (pestañas, plugin Lua de memoria)
+                     ├─ Shell (abajo 30%)  bin/vkterm-shell → $SHELL
+                     ├─ Barra derecha 25%
+                     │   ├─ Claude Code    claude  (start_suspended: espera Enter)
+                     │   └─ Codex          codex   (start_suspended: espera Enter)
+                     └─ Barra de estado    plugin vkterm (mode "status")
 ```
+
+Al cerrar la carpeta (⌘K F) o la pestaña, la sesión termina y bin/vkterm
+desactiva la tabla: vuelve el shell de antes, con su scroll e historial.
 
 ```
 ┌──────────┬────────────────────────┬────────────┐
@@ -32,6 +41,143 @@ Ghostty (perfil config/ghostty/vkterm.ghostty: capa ⌘, ⌥ = caracteres)
 
 Cada panel de terminal es un proceso hijo del servidor de Zellij con su propio
 PTY.
+
+## Modo terminal y modo IDE
+
+### vkTERM.app (`bin/vkterm-app`)
+
+Una copia de /Applications/Ghostty.app en ~/Applications con:
+
+- **Identificador propio** (`io.github.vk62001.vkterm`), nombre e icono. Hace
+  falta para AppleScript: con el de Ghostty, `tell application id` podría
+  dirigirse al Ghostty personal del usuario, que tiene otra configuración.
+- **Lanzador** como ejecutable principal (`scripts/vkterm-app-launcher.c`):
+  macOS lanza las apps sin argumentos, así que el lanzador sustituye su
+  proceso por el `ghostty` real con `--config-default-files=false` y el
+  perfil de vkTERM. Exporta `VKTERM_HOME` (clave `VKTermHome` del
+  Info.plist), `VKTERM_APP_ID` y `ZDOTDIR=config/zsh` (y el ZDOTDIR original
+  en `VKTERM_USER_ZDOTDIR`).
+- **Info.plist**: sin `CFBundleIconName` (el icono del catálogo de Ghostty
+  tendría prioridad), sin su plugin del Dock ni sus servicios, y con las
+  actualizaciones automáticas apagadas (además de `auto-update = off`).
+- **Firma local** (ad hoc) con los mismos *entitlements*, y **sin la marca de
+  cuarentena** que la copia hereda de la Ghostty.app descargada: con la firma
+  original modificada, Gatekeeper mataba el proceso.
+- Una huella (`VKTermBuild`) de la versión de Ghostty, el lanzador, el icono y
+  el propio script: `install` no rehace la app si no cambia nada, y macOS
+  conserva los permisos concedidos a esa firma. `install --test` crea
+  `vkTERM Test.app` en ~/Library/Caches/vkterm para las pruebas.
+
+### Tablas de atajos (Ghostty 1.3)
+
+El modo de cada pestaña es una tabla de atajos de Ghostty
+(`keybind = vkterm/…`). Ghostty busca primero en la tabla activa y después
+en la de por defecto. Comprobado con eventos sintetizados:
+
+- las tablas son **por pestaña** (por superficie);
+- las teclas con menú de macOS (⌘W, ⌘Z, ⌘A, ⌘F, ⌘C, ⌘V, ⌘D…) llegan a la
+  tabla, no al menú, **salvo ⌘T y ⌘⇧,** (New Tab, Reload Configuration):
+  macOS las resuelve por el menú. Por eso la tabla por defecto las enlaza por
+  tecla física (`super+key_t`, `super+shift+comma`), que no pone atajo en el
+  menú;
+- **recargar la configuración vacía las tablas**. `bin/vkterm-theme` (cambio
+  de tema y ⌘⇧,) las vuelve a activar con `bin/vkterm-surface reactivate`;
+  desde el menú de Ghostty no;
+- mientras la tabla está activa, Ghostty dibuja «⌨ vkterm» abajo en el
+  centro (no se puede ocultar): la barra de estado deja ese hueco libre.
+
+### `vkterm` (bin/vkterm)
+
+```
+vkterm [--then ACCIÓN] [--here] [--new] [DIR] [ARCHIVO]
+ ├─ ¿la carpeta ya está abierta? (projects/<huella>/surface, pid vivo y la
+ │   pestaña existe)                       → bin/vkterm-surface focus; fin
+ ├─ --here                                 → bin/vkterm-workspace en este terminal
+ ├─ desde Zellij, otro terminal o sin VKTERM_APP_ID
+ │                                         → bin/vkterm-surface open: ventana nueva
+ └─ en una pestaña de vkTERM.app (modo terminal):
+     ├─ OSC 2 con un título único; `vkterm-surface claim` busca ese terminal
+     │   por AppleScript, activa la tabla `vkterm` y devuelve su id
+     ├─ escribe surface (id, pid, app) y OSC 7 con el proyecto (⌘T abre ahí)
+     ├─ bin/vkterm-workspace como proceso hijo (no exec)
+     └─ al terminar: desactiva la tabla, borra surface y devuelve OSC 7
+```
+
+- **Ventana nueva convertida** (`vkterm-surface open`): con la app abierta,
+  AppleScript `new window` con `initial working directory` y la variable
+  `VKTERM_AUTOSTART=nonce:acción:carpeta`; con la app cerrada,
+  `open -b <id> --env VKTERM_AUTOSTART=…`. La integración de zsh ejecuta
+  `vkterm` en su primer prompt; solo la pestaña que reclama el nonce
+  (`mkdir`), porque con la app cerrada la variable llega a todas.
+- **AppleScript**: el id de la app va escrito en el texto del script. Con
+  `tell application id <variable>`, AppleScript no compila los términos de
+  Ghostty (`terminal`, `perform action`).
+
+### Integración de zsh (config/zsh)
+
+- `.zshenv` es un puente, como el de la integración de Ghostty (que deja
+  ZDOTDIR en config/zsh antes de cargarlo): devuelve ZDOTDIR a su valor,
+  carga el `.zshenv` del usuario y registra un `precmd` de un solo uso que
+  carga `vkterm.zsh` después del `.zshrc` del usuario. Probado con
+  oh-my-zsh y powerlevel10k.
+- `vkterm.zsh`: la función `vkterm` (aunque no esté en el PATH); los widgets
+  de ⌘B, ⌘J, ⌘P y ⌘⇧P (F13–F16 con Super), que guardan lo escrito
+  (`push-line`) y ejecutan `vkterm --then ACCIÓN .`, en los mapas emacs,
+  viins y vicmd; y `VKTERM_AUTOSTART`.
+
+### Sesiones y memoria
+
+- **La sesión dura lo que su pestaña.** `on_force_close "quit"` en
+  config.kdl: al cerrar la pestaña o la ventana (SIGHUP al cliente) Zellij
+  termina la sesión. ⌘K F la termina con `quit_zellij()`. Sin Detach.
+- **Memoria por carpeta** en `config/local/projects/<md5 de la ruta>/`
+  (bin/vkterm-state), en líneas clave=valor:
+
+| Archivo | Lo escribe | Contenido |
+|---|---|---|
+| `workspace` | el plugin (`vkterm-state save`, cada segundo si cambió) | zonas visibles, foco, carpetas desplegadas y selección del explorador |
+| `editor` | el plugin Lua de Micro, en cada evento si cambió | pestañas (rutas absolutas, en orden), la activa, las modificadas y las sin nombre con texto |
+| `surface` | bin/vkterm | id de la pestaña de vkTERM.app, pid y app |
+| `path` | bin/vkterm-state | la ruta de la carpeta |
+
+- **Se guarda sobre la marcha** porque al cerrar la ventana no hay ocasión de
+  guardar nada. El plugin Lua solo actúa en el Micro del panel Editor
+  (`VKTERM_EDITOR_PANE=1`): el de `git commit` y el `$EDITOR` de los agentes
+  comparten la configuración.
+- **Al abrir**: bin/vkterm-editor pasa a Micro las pestañas que siguen
+  existiendo (relativas al proyecto, como las nombra bin/vkterm-open) y la
+  activa (`VKTERM_ACTIVE_TAB`, que aplica el plugin Lua en `postinit`); el
+  plugin aplica una vez el `workspace` cuando ya están los cinco paneles y
+  después la acción de `--then` (`vkterm-state load` devuelve `then=`).
+  `.vkterm open=` solo se usa si la carpeta aún no tiene memoria.
+
+### ⌘K F: cerrar la carpeta
+
+```
+Alt q → close_folder ─▶ agentes en marcha (PaneInfo: !exited && !is_held)
+                    └─▶ vkterm-state close-check: modified= y unnamed= del archivo editor
+   nada que perder → guarda la memoria → quit_zellij()
+   si no           → ventana de confirmación (mode "confirm", src/confirm.rs)
+                     Guardar y cerrar → vkterm-state save-all (vkterm.saveall en Micro)
+                     Cerrar sin guardar → vkterm-state discard (vkterm.discard: ReOpen + RemoveBackup)
+                     Cerrar (solo agentes) → quit_zellij()
+```
+
+Sin «Guardar y cerrar» si hay pestañas sin nombre (habría que preguntar
+dónde). Cerrar la ventana del IDE no pasa por aquí: Ghostty pregunta antes
+(«Close Window?», `confirm-close-surface`) y, si se acepta, Micro deja sus
+copias de los cambios y ofrece recuperarlos al volver a abrir la carpeta.
+
+### Barra de estado (mode "status")
+
+Otra instancia del plugin en una fila al fondo (sustituye a compact-bar):
+carpeta, rama de git y modo de Zellij si no es LOCKED a la izquierda; ⌘K F y
+⌘K ⌘S a la derecha; el centro libre para el indicador de Ghostty. **No pide
+permisos** (en un panel de una fila no se podría responder a la pregunta): el
+explorador le manda la rama (`git rev-parse` cada 5 s) y el modo en un
+mensaje `status`, también en cada ModeUpdate para que se redibuje con el tema
+nuevo. Las ventanas flotantes reconocen al controlador como el panel fijo del
+plugin que se puede enfocar (`floating::controller`).
 
 ## Plugin vkterm
 
@@ -50,6 +196,10 @@ instancia del mismo plugin:
 | `src/fuzzy.rs` | Búsqueda difusa al estilo de VS Code (lógica pura, con tests). |
 | `src/commands.rs` | Comandos de la paleta con su mensaje y atajo (lógica pura, con tests). |
 | `src/clipboard.rs` | ⌘V en Claude Code y Codex: decide, por `clipboard info`, si el portapapeles solo tiene una imagen (lógica pura, con tests). |
+| `src/memory.rs` | Memoria del workspace de cada carpeta: lectura y escritura del texto clave=valor (lógica pura, con tests). |
+| `src/closing.rs` | ⌘K F: qué se perdería, el texto de la confirmación y sus botones (lógica pura, con tests). |
+| `src/confirm.rs` | La confirmación de cerrar la carpeta (instancia con `mode "confirm"`). |
+| `src/status.rs` | La barra de estado (instancia con `mode "status"`). |
 
 ### Explorador
 
@@ -93,6 +243,8 @@ aunque su panel esté oculto.
 | `edit` + `undo`/`redo`/`select_all`/`find`/`cut`/`copy` | Ctrl-Z/Y/A/F/X/C a Micro, solo si el foco está en el editor (en un shell suspenderían o interrumpirían el proceso) |
 | `quick_open` | Foco al editor, Ctrl-E y `tab ` |
 | `paste` | Tras el ⌘V de Ghostty: si el foco está en Claude Code o Codex y el portapapeles solo tiene una imagen (`osascript -e 'clipboard info'`, `src/clipboard.rs`), les manda ⌃V, con el que la adjuntan |
+| `close_folder`, `close_folder_confirmed` | ⌘K F y la respuesta de su confirmación (ver «⌘K F: cerrar la carpeta») |
+| `reload_config` | ⌘⇧,: `vkterm-theme reload` (recarga Ghostty y reactiva el modo IDE) |
 
 **Recolocación.** Zellij no devuelve un panel oculto a su sitio al mostrarlo:
 lo inserta como uno nuevo. Tampoco bastan las *swap layouts*, que eligen por
@@ -177,9 +329,9 @@ Como "Preferences: Color Theme" de VS Code. Cada tema de
 
 | Pieza | Cómo cambia en vivo | Cómo arranca con el tema guardado |
 |---|---|---|
-| Ghostty | `bin/vkterm-theme` escribe `config/local/theme.ghostty` y manda `SIGUSR2` al Ghostty de esta sesión (sube por los procesos padre de sus clientes de Zellij) | El perfil incluye `?../local/theme.ghostty` al final |
+| Ghostty | `bin/vkterm-theme` escribe `config/local/theme.ghostty` y manda `SIGUSR2` al Ghostty de esta sesión (sube por los procesos padre de sus clientes de Zellij); después reactiva el modo IDE de sus pestañas | El perfil incluye `?../local/theme.ghostty` al final |
 | Zellij | El selector llama a `reconfigure("theme …")` | `bin/vkterm` crea la sesión con `options --theme` |
-| Micro | `bin/vkterm-theme` le manda `set colorscheme …` como `vkterm-open` | `bin/vkterm-editor` lo lanza con `-colorscheme` |
+| Micro | `bin/vkterm-theme` le manda `set colorscheme …` con `bin/vkterm-micro` | `bin/vkterm-editor` lo lanza con `-colorscheme` |
 | Atenuado | El selector avisa al explorador (`pipe_message_to_plugin` a su id) | El explorador pregunta a `bin/vkterm-theme current` |
 
 - **Selector:** es otra instancia del plugin (`mode "themes"`), como la
@@ -236,6 +388,8 @@ Micro ─ µlsp (plug/mlsp, config/lsp/mlsp.lua) ─ stdio ─▶ lsp/bin/<servi
 
 ## Teclado
 
+En el modo IDE (tabla `vkterm` del perfil):
+
 ```
 ⌘ tecla ──▶ Ghostty: keybind ──▶ secuencia ──▶ Zellij (locked) ──▶ destino
 ⌘1..⌘5        esc:1..5             Alt 1..5      MessagePlugin focus
@@ -243,6 +397,8 @@ Micro ─ µlsp (plug/mlsp, config/lsp/mlsp.lua) ─ stdio ─▶ lsp/bin/<servi
 ⌥⌘B           esc:8                Alt 8         MessagePlugin toggle_agents
 ⌘W            esc:9                Alt 9         MessagePlugin close_tab
 ⌘P            esc:0                Alt 0         MessagePlugin quick_open
+⌘K F          esc:q                Alt q         MessagePlugin close_folder
+⌘⇧,           esc:r                Alt r         MessagePlugin reload_config
 ⌘⌥← → ⌃Tab    esc:, / esc:.        Alt , / .     MessagePlugin prev_tab / next_tab
 ⌘⌥↑ ↓         esc:k / esc:j        Alt k / j     MoveFocus
 ⌘S            esc:OQ               F2            Micro (Save)
@@ -251,46 +407,51 @@ Micro ─ µlsp (plug/mlsp, config/lsp/mlsp.lua) ─ stdio ─▶ lsp/bin/<servi
 ⌘V            acción de Ghostty    —             bracketed paste (+ Alt v → paste: imagen a los agentes)
 ```
 
+En el modo terminal, ⌘B, ⌘J, ⌘P y ⌘⇧P envían F13–F16 con Super
+(`csi:25;9~`, `26;9~`, `28;9~`, `29;9~`), que recogen los widgets de
+config/zsh/vkterm.zsh; el resto de atajos son los de Ghostty.
+
 Detalle, verificación y conflictos en [keybindings.md](keybindings.md).
 
 ## Flujo de arranque
 
-1. **`bin/vkterm-ghostty [--new] [DIR] [ARCHIVO]`** lanza una instancia nueva
-   de Ghostty con `open -na`, el perfil del proyecto y
-   `--config-default-files=false`. Los argumentos viajan como variables de
-   entorno: si fueran argumentos, AppKit los trataría como archivos a abrir.
-   `open` pasa además todo su entorno a Ghostty. Por eso se quitan antes
-   `ZELLIJ`, `ZELLIJ_SESSION_NAME` y `ZELLIJ_PANE_ID`: con `vkterm .` desde
-   un panel de vkTERM, `bin/vkterm` creería estar dentro de Zellij.
-2. Ghostty ejecuta `bin/vkterm` a través de `/bin/zsh -lc`, porque arranca los
-   comandos con el PATH mínimo de launchd.
-3. **`bin/vkterm`**:
+1. **vkTERM.app** arranca el `ghostty` real con el perfil (lanzador). Cada
+   pestaña abre el shell del usuario con `/usr/bin/login`, con la
+   integración de zsh de Ghostty y la de vkTERM encadenadas.
+2. **`vkterm .`** (bin/vkterm) decide dónde abrir el IDE (ver «`vkterm`») y,
+   en el sitio, activa la tabla `vkterm` y lanza bin/vkterm-workspace como
+   proceso hijo. El shell queda esperando debajo.
+3. **`bin/vkterm-workspace`**:
    - Valida el directorio y las herramientas.
    - Compila el plugin si falta o hay fuentes más nuevas
      (`scripts/build-plugins.sh --if-needed`).
-   - Elige el archivo inicial (argumento o `open=` en `.vkterm`).
    - Calcula el nombre de la sesión, `vk-<carpeta>-<huella>` (6 hex de la
      ruta y de todos los archivos de `config/zellij`), recortando la carpeta para que la ruta del socket de
      Zellij no pase de 103 bytes (límite de macOS).
      `--new` añade un sufijo aleatorio.
    - Prepara el estado local, `config/local/` (o `VKTERM_STATE_DIR`): copia la
      configuración de Micro de `config/micro/` a `config/local/micro/`, donde
-     Micro guarda además cursores, copias e historial.
+     Micro guarda además cursores, copias e historial, y su plugin Lua
+     (`config/micro/plugins/vkterm` → `local/micro/plug/vkterm`).
    - Copia `config/zellij` a `config/local/zellij/<huella>/` si no existe, y
      borra las copias de sesiones que ya no existen. La sesión usa siempre
      esa copia (ver "Copia de la configuración por sesión").
+   - Elige el archivo inicial (argumento o, sin memoria, `open=` en `.vkterm`).
    - Exporta `VKTERM_HOME`, que `config.kdl` usa para localizar el `.wasm`
      (Zellij expande variables en la ruta del plugin). Exporta también
-     `VKTERM_STATE_DIR`, `VKTERM_PROJECT`, `VKTERM_OPEN_FILE`,
-     `EDITOR` / `VISUAL=micro` y `MICRO_CONFIG_HOME`, y añade `bin/` al PATH.
-   - Si la sesión existe, se adjunta a ella. Si no, la crea en el proyecto con
-     el tema de Zellij guardado (`options --theme`).
+     `VKTERM_STATE_DIR`, `VKTERM_PROJECT`, `VKTERM_PROJECT_STATE`,
+     `VKTERM_OPEN_FILE`, `VKTERM_THEN`, `EDITOR` / `VISUAL=micro` y
+     `MICRO_CONFIG_HOME`, y añade `bin/` al PATH.
+   - Si queda una sesión viva con ese nombre, se adjunta a ella. Si no, la
+     crea en el proyecto con el tema de Zellij guardado (`options --theme`).
 4. Zellij carga `config.kdl` de esa copia:
    - modo locked, tema y atajos;
    - alias `plugins { vkterm … }`;
-   - `scrollback_editor "vkterm-open"`.
+   - `scrollback_editor "vkterm-open"`;
+   - `on_force_close "quit"`.
 
-   Después carga `layouts/vkterm.kdl`.
+   Después carga `layouts/vkterm.kdl`, y el plugin aplica la memoria de la
+   carpeta.
 
 **Copia de la configuración por sesión.** Zellij recarga `config.kdl` en
 caliente, pero el plugin de una sesión sigue siendo el de la versión con la que
@@ -307,10 +468,10 @@ plugin y volvería a preguntarlos en cada sesión.
 
 | Componente | Mecanismo | Qué no se toca |
 |---|---|---|
-| Ghostty | `--config-default-files=false` + `--config-file` | `~/.config/ghostty` |
+| Ghostty | vkTERM.app (otro identificador) con `--config-default-files=false` + `--config-file` | `~/.config/ghostty` y la Ghostty.app del usuario |
 | Zellij | `--config-dir config/local/zellij/<huella>` (copia de `config/zellij`) | `~/.config/zellij` |
 | Micro | `MICRO_CONFIG_HOME=config/local/micro` (copia de `config/micro`) | `~/.config/micro` |
-| Shell | Solo hereda variables; no se modifica ningún rc | `~/.zshrc`, `~/.zprofile` |
+| Shell | ZDOTDIR apunta a `config/zsh`, que carga los archivos del usuario y devuelve ZDOTDIR a su valor; no se modifica ningún rc | `~/.zshrc`, `~/.zprofile`, `~/.zshenv` |
 
 Estado que sí se escribe fuera del repositorio, porque las herramientas no
 permiten moverlo:
@@ -319,6 +480,12 @@ permiten moverlo:
   (`~/Library/Caches/org.Zellij-Contributors.Zellij/`), socket y logs
   (`$TMPDIR/zellij-<uid>/`).
 - `bin/vkterm-editor`: una marca vacía por sesión en `$TMPDIR`.
+- `config/zsh/vkterm.zsh`: una carpeta vacía por ventana abierta ya convertida
+  (`$TMPDIR/vkterm-autostart-<nonce>`).
+- `bin/vkterm-app`: `~/Applications/vkTERM.app` (y `vkTERM Test.app` en
+  `~/Library/Caches/vkterm`), su registro en LaunchServices, el enlace
+  `~/.local/bin/vkterm` con `--link` y los permisos que macOS guarda para la
+  app (carpetas, Automatización).
 - Cargo: caché de crates en `~/.cargo/registry` (descargadas de crates.io).
 - Dentro del repositorio, ignorados por git: `plugins/vkterm/target/` y el
   estado local, `config/local/` (tema elegido, datos de Micro y copias de la
@@ -348,33 +515,47 @@ permiten moverlo:
 | Hash de configuración en el nombre de la sesión | Evita reanudar una sesión con un layout antiguo sin destruirla. |
 | Copia de la configuración de Zellij por sesión | Zellij recarga `config.kdl` en caliente, pero el plugin de una sesión es el de su versión: atajos nuevos con un plugin viejo abrieron un segundo explorador. |
 | Sin forks de Zellij ni de Ghostty | La API de plugins de Zellij 0.45.1 ha bastado. |
+| Modo terminal y modo IDE por pestaña | Decisión del usuario (22-10-2026): vkTERM es el terminal de todos los días y `vkterm .` convierte la pestaña, como `code .`. |
+| vkTERM.app = copia local de Ghostty.app | Icono y nombre propios en el Dock, y un identificador propio para AppleScript sin chocar con el Ghostty del usuario. Sin fork: el mismo binario. |
+| Tablas de atajos de Ghostty + AppleScript | Única forma de que cada pestaña tenga sus atajos: un programa no puede cambiar los atajos de Ghostty de otra manera. |
+| El IDE como proceso hijo del shell | El shell de antes queda intacto debajo (scroll, historial); ⌘K F vuelve a él. |
+| La sesión dura lo que su pestaña, con memoria | Decisión del usuario: al cerrar la carpeta o la ventana se cierra todo, pero la carpeta vuelve como estaba. Las conversaciones de los agentes no se recuerdan. |
+| ⌘K F pregunta solo si se perdería algo | Decisión del usuario, como VS Code al cerrar con cambios. |
+| Barra de estado propia | El indicador de la tabla de Ghostty no se puede ocultar: así queda sobre una barra y no sobre el Shell (decisión del usuario). |
 
 ## Estructura del repositorio
 
 ```
 vkTERM/
 ├── bin/
-│   ├── vkterm                 Lanzador: compila el plugin si hace falta; sesión Zellij por proyecto
-│   ├── vkterm-ghostty         Abre vkterm en una ventana de Ghostty con el perfil propio
-│   ├── vkterm-editor          Proceso del panel Editor (Micro + archivo inicial)
+│   ├── vkterm                 El comando `vkterm`: convierte la pestaña, abre una ventana o enfoca
+│   ├── vkterm-workspace       El IDE en el terminal actual: plugin, estado y sesión de Zellij
+│   ├── vkterm-app             Crea vkTERM.app (copia local de Ghostty.app)
+│   ├── vkterm-surface         Modo de cada pestaña de vkTERM.app (AppleScript)
+│   ├── vkterm-state           Memoria de cada carpeta
+│   ├── vkterm-editor          Proceso del panel Editor (Micro + pestañas recordadas)
 │   ├── vkterm-shell           Proceso del panel Shell ($SHELL)
 │   ├── vkterm-open            Abre un archivo en una pestaña del Micro del editor
+│   ├── vkterm-micro           Ejecuta un comando en el Micro del editor
 │   ├── vkterm-plugins         Instala el LSP (µlsp y servidores) con versiones fijas
-│   └── vkterm-theme           Guarda el tema (⌘K ⌘T) y lo aplica a Ghostty y Micro
+│   ├── vkterm-theme           Guarda el tema (⌘K ⌘T) y lo aplica a Ghostty y Micro
+│   └── vkterm-ghostty         Nombre anterior de `vkterm` (enlaces antiguos)
 ├── config/
 │   ├── zellij/
 │   │   ├── config.kdl         Modo, tema, alias del plugin, atajos → mensajes al plugin
 │   │   ├── layouts/vkterm.kdl Explorador | editor / Shell | Claude Code / Codex
 │   │   └── themes/vkterm.kdl  Dark Modern y Light Modern para Zellij
-│   ├── micro/                 settings, bindings, colores (se copian a local/micro)
+│   ├── micro/                 settings, bindings, colores y plugins/vkterm (se copian a local/micro)
+│   ├── zsh/                   Integración de zsh de vkTERM.app (modo terminal)
 │   ├── lsp/                   Versiones fijas, parches y configuración de µlsp
 │   ├── ghostty/
-│   │   ├── vkterm.ghostty     Perfil de Ghostty: capa ⌘, ⌥ = caracteres
+│   │   ├── vkterm.ghostty     Perfil de Ghostty: modo terminal y tabla `vkterm` (modo IDE)
 │   │   └── themes/            Light Modern para Ghostty
 │   └── local/                 Estado (fuera de git): tema elegido, datos de Micro
 ├── plugins/vkterm/            Plugin de Zellij (Rust → wasm32-wasip1)
 ├── scripts/
 │   ├── build-plugins.sh       Compila el plugin (--if-needed, --test)
+│   ├── vkterm-app-launcher.c  Ejecutable principal de vkTERM.app
 │   ├── doctor.sh              Auditoría del entorno (solo lectura)
 │   ├── smoke-test.py          Pruebas: configuración + PTY (+ Ghostty con --ghostty)
 │   └── send-keys.swift        Teclas sintetizadas para la prueba de Ghostty

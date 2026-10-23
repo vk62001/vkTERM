@@ -1,6 +1,7 @@
-//! Lo común a las ventanas flotantes del plugin (atajos y temas): se abren y
-//! se cierran con el mismo atajo, toman el foco, se centran en la zona de
-//! paneles con un marco propio y avisan cuando pierden el foco.
+//! Lo común a las ventanas flotantes del plugin (atajos, temas, paleta y
+//! confirmación al cerrar la carpeta): se abren y se cierran con el mismo
+//! atajo, toman el foco, se centran en la zona de paneles con un marco propio
+//! y avisan cuando pierden el foco.
 use zellij_tile::prelude::*;
 
 /// Marco propio, con el título arriba y la ayuda abajo. El de Zellij añade
@@ -101,6 +102,18 @@ impl Floating {
             change_floating_panes_coordinates(vec![(PaneId::Plugin(self.me), coordinates)]);
         }
     }
+}
+
+/// El explorador (controlador) de la sesión: el panel fijo del mismo plugin
+/// que se puede enfocar. La barra de estado también es este plugin, pero no
+/// se puede enfocar.
+pub fn controller(manifest: &PaneManifest, me: u32) -> Option<u32> {
+    let panes = manifest.panes.values().flatten();
+    let url = panes.clone().find(|p| p.is_plugin && p.id == me).and_then(|p| p.plugin_url.clone())?;
+    panes
+        .filter(|p| p.is_plugin && !p.is_floating && p.is_selectable && p.id != me)
+        .find(|p| p.plugin_url.as_ref() == Some(&url))
+        .map(|p| p.id)
 }
 
 /// Marco redondeado con `title` centrado arriba y `hint` centrado abajo.

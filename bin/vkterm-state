@@ -1,0 +1,91 @@
+#!/bin/zsh
+# vkTERM — memoria de cada carpeta, como VS Code: al volver a abrirla, el IDE
+# queda como estaba aunque su sesión ya no exista.
+#
+#   vkterm-state dir [CARPETA]     carpeta de su memoria (la crea)
+#   vkterm-state load              workspace + then= (la acción de --then)
+#   vkterm-state save NOMBRE TEXTO  escribe NOMBRE (workspace) de forma atómica
+#   vkterm-state close-check       lo que se perdería al cerrar: modified= y unnamed=
+#   vkterm-state save-all          Micro guarda los archivos modificados
+#   vkterm-state discard           Micro descarta los cambios y sus copias
+#
+# Vive en el estado local (config/local o VKTERM_STATE_DIR), en
+# projects/<md5 de la ruta, 12 hex>/:
+#   path        la ruta de la carpeta
+#   workspace   zonas visibles, foco, carpetas desplegadas y selección del
+#               explorador (lo escribe el plugin vkterm)
+#   editor      pestañas de Micro, la activa y las modificadas (lo escribe el
+#               plugin Lua de Micro, config/micro/plugins/vkterm)
+#   surface     pestaña de vkTERM.app con el IDE abierto (bin/vkterm)
+# Todos son líneas clave=valor. Sin VKTERM_PROJECT_STATE, la carpeta sale de
+# VKTERM_PROJECT, que exporta bin/vkterm-workspace a toda la sesión.
+emulate -L zsh
+setopt no_unset pipe_fail extended_glob
+
+vkterm_home=${0:A:h:h}
+state=${VKTERM_STATE_DIR:-$vkterm_home/config/local}
+
+project_dir() {
+  local project=${1:A}
+  local dir=$state/projects/$(print -rn -- $project | md5 | cut -c1-12)
+  mkdir -p $dir
+  [[ -f $dir/path ]] || print -r -- $project > $dir/path
+  print -r -- $dir
+}
+
+current() {
+  if [[ -n ${VKTERM_PROJECT_STATE:-} ]]; then
+    mkdir -p $VKTERM_PROJECT_STATE
+    print -r -- $VKTERM_PROJECT_STATE
+  else
+    project_dir ${VKTERM_PROJECT:-$PWD}
+  fi
+}
+
+# Escribe $2 en $1 sin dejar nunca un archivo a medias.
+write() {
+  local tmp=$1.$$.tmp
+  print -r -- $2 > $tmp && mv -f $tmp $1
+}
+
+# Espera hasta 5 s a que el archivo editor no tenga modified=.
+wait_saved() {
+  local editor=$1/editor
+  for _ in {1..50}; do
+    [[ -f $editor ]] && ! grep -q '^modified=' $editor && return 0
+    sleep 0.1
+  done
+  return 1
+}
+
+case ${1:-} in
+  dir)
+    project_dir ${2:-${VKTERM_PROJECT:-$PWD}}
+    ;;
+  load)
+    dir=$(current)
+    [[ ! -f $dir/workspace ]] || cat $dir/workspace
+    print -r -- "then=${VKTERM_THEN:-}"
+    ;;
+  save)
+    (( $# == 3 )) && [[ $2 == [a-z]## ]] || { print -u2 "uso: vkterm-state save NOMBRE TEXTO"; exit 2; }
+    write $(current)/$2 $3
+    ;;
+  close-check)
+    dir=$(current)
+    [[ ! -f $dir/editor ]] || grep -E '^(modified|unnamed)=' $dir/editor || true
+    ;;
+  save-all)
+    vkterm-micro vkterm.saveall
+    if wait_saved $(current); then print saved; else print failed; fi
+    ;;
+  discard)
+    vkterm-micro vkterm.discard
+    sleep 0.3
+    print discarded
+    ;;
+  *)
+    print -u2 "uso: vkterm-state dir [CARPETA] | load | save NOMBRE TEXTO | close-check | save-all | discard"
+    exit 2
+    ;;
+esac
