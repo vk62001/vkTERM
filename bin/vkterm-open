@@ -5,6 +5,7 @@
 # Lo usan:
 #   - el explorador (plugin vkterm), en segundo plano, con ZELLIJ_SESSION_NAME
 #     y, para abrir sin quitar el foco al explorador, VKTERM_NO_FOCUS=1;
+#   - la vista Buscar, con VKTERM_LINE y VKTERM_COLUMN para ir a la coincidencia;
 #   - Zellij (`scrollback_editor` en config/zellij/config.kdl) con
 #     `zellij edit` y al editar el scrollback: lo ejecuta en un panel temporal,
 #     que se cierra solo cuando el script termina.
@@ -95,5 +96,11 @@ if (( ! found )); then
   else
     micro_command "tab ${(qq)name}"
   fi
+fi
+# Desde la vista Buscar (⌘⇧F): VKTERM_LINE (y VKTERM_COLUMN) llevan el cursor a
+# la coincidencia.
+if [[ ${VKTERM_LINE:-} == <1-> ]]; then
+  sleep 0.2
+  micro_command "goto ${VKTERM_LINE}:${VKTERM_COLUMN:-1}"
 fi
 focus $id

@@ -31,6 +31,7 @@ check Homebrew   no  brew   brew --version
 check Git        sí  git    git --version
 check Zellij     sí  zellij zellij --version
 check Micro      sí  micro  micro -version
+check ripgrep   no  rg     rg --version   # bin/vkterm-search (⌘⇧F); sin él, grep, y sin reemplazar en archivos
 check jq         sí  jq     jq --version   # bin/vkterm-open (incluido en macOS 15+)
 check Rust       sí  rustc  rustc --version   # compila el plugin vkterm
 check Cargo      sí  cargo  cargo --version

@@ -37,6 +37,7 @@ pub const COMMANDS: &[Command] = &[
     cmd("Ver: Ampliar o restaurar el panel", "⌘K Z", "zoom", ""),
     cmd("Ver: Mostrar u ocultar .git, .DS_Store… en el explorador", "Ctrl h", "toggle_excluded", ""),
     cmd("Ver: Explorador", "⌘⇧E", "show_view", "explorer"),
+    cmd("Ver: Buscar en los archivos", "⌘⇧F", "show_view", "search"),
     cmd("Ver: Control de código fuente", "⌃⇧G", "show_view", "scm"),
     cmd("Git: Commit", "⌘Enter", "git", "commit"),
     cmd("Git: Preparar todos los cambios", "", "git", "stage_all"),
@@ -55,6 +56,7 @@ pub const COMMANDS: &[Command] = &[
     cmd("Editor: Rehacer", "⌘⇧Z", "editor_key", "redo"),
     cmd("Editor: Seleccionar todo", "⌘A", "editor_key", "select_all"),
     cmd("Editor: Buscar en el archivo", "⌘F", "editor_key", "find"),
+    cmd("Editor: Reemplazar en el archivo", "⌥⌘F", "editor_key", "replace"),
     cmd("Ver: Aumentar el tamaño de letra", "⌘+", "font_size", "+1"),
     cmd("Ver: Reducir el tamaño de letra", "⌘-", "font_size", "-1"),
     cmd("Ver: Restablecer el tamaño de letra", "⌘0", "font_size", "0"),
@@ -81,6 +83,7 @@ pub fn editor_key(name: &str) -> Option<&'static [u8]> {
         "paste" => b"\x16",
         // Ctrl-E (línea de comandos de Micro) y vkterm.reveal, del plugin Lua.
         "reveal" => b"\x05vkterm.reveal\r",
+        "replace" => b"\x05vkterm.replace\r",
         _ => return None,
     })
 }

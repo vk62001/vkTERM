@@ -197,6 +197,12 @@ keybind = vkterm/ctrl+shift+g=esc:/
 keybind = vkterm/super+shift+e=esc:'
 keybind = vkterm/super+enter=esc:*
 
+# ⌘⇧F: buscar en los archivos (la vista Buscar de la barra lateral, con el
+# campo de reemplazo con Tab) y ⌥⌘F: reemplazar en el archivo del editor, como
+# VS Code. Con el foco fuera del editor, ⌥⌘F no hace nada.
+keybind = vkterm/super+shift+f=esc:%
+keybind = vkterm/super+alt+f=esc:&
+
 # ⌘O: «Abrir reciente», como «File: Open Recent» de VS Code: Enter abre la
 # carpeta en esta pestaña (cierra antes la actual, preguntando si se perdería
 # algo) y ⇧Enter en una ventana nueva.
