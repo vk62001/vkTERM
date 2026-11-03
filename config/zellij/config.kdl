@@ -7,17 +7,22 @@
 // (default-plugins/configuration/src/presets.rs, v0.45.1) con primary=Ctrl y
 // secondary=Alt. Diferencias respecto al preset:
 //   - En modo locked solo se reservan Alt h/j/k/l, Alt =/-, Alt i/o, Alt z,
-//     Alt 0..9, Alt , / Alt ., Alt ;, Alt ?, Alt t y Alt u/y/a/s/x/c. Alt n/f/p/[/]
-//     y Alt+flechas quedan para Micro (multicursor, palabras, diff) y solo
-//     actúan en modo normal (tras Ctrl g).
-//   - Alt z (zoom), Alt 0..9, Alt , / ., Alt ;, Alt ?, Alt t y Alt u/y/a/s/x/c
-//     (destinos de la capa ⌘ de Ghostty) son añadidos de vkTERM.
-//   - Se omite la entrada "s" del modo session (zellij:share, servidor web).
+//     Alt 0..9, Alt , / Alt ., Alt ;, Alt ?, Alt t, Alt q, Alt r, Alt d y
+//     Alt u/y/a/s/x/c/v. Alt n/f/p/[/] y Alt+flechas quedan para Micro
+//     (multicursor, palabras, diff) y solo actúan en modo normal (tras Ctrl g).
+//   - Alt z (zoom), Alt 0..9, Alt , / ., Alt ;, Alt ?, Alt t, Alt q, Alt r,
+//     Alt d, Alt _ y Alt u/y/a/s/x/c/v (destinos de la capa ⌘ de Ghostty) son
+//     añadidos de vkTERM.
+//   - Se omiten la entrada "s" del modo session (zellij:share, servidor web) y
+//     "d" (Detach): la sesión dura lo que su pestaña de vkTERM.app.
 // Detalle y conflictos: docs/keybindings.md
 
 default_layout "vkterm"
 default_mode "locked"
-theme "catppuccin-mocha"
+// Tema hasta que bin/vkterm-workspace pone el elegido (--theme). Los de
+// vkTERM (themes/vkterm.kdl) los genera scripts/gen-themes.py a partir de
+// los de VS Code, con los colores de su interfaz: los usa el plugin vkterm.
+theme "vkterm-catppuccin-mocha"
 
 // Plugin vkterm (plugins/vkterm): explorador y controlador del workspace.
 // Zellij expande las variables de entorno de la ruta; bin/vkterm exporta
@@ -25,7 +30,7 @@ theme "catppuccin-mocha"
 // siempre el alias, para que todos los mensajes lleguen a la misma instancia.
 //
 // Los paneles sin foco se atenúan con los colores del tema elegido (⌘K ⌘T,
-// plugins/vkterm/src/themes.rs). Para fijar otros en todos los temas, añade
+// config/themes/themes.json). Para fijar otros en todos los temas, añade
 // al alias un bloque { inactive_fg "#rrggbb"; inactive_bg "#rrggbb"; }.
 plugins {
     vkterm location="file:/$VKTERM_HOME/plugins/vkterm/target/wasm32-wasip1/release/vkterm.wasm"
@@ -40,8 +45,21 @@ scrollback_editor "vkterm-open"
 show_startup_tips false
 show_release_notes false
 
+// Subir un panel con la rueda (p. ej. para releer la salida de Claude Code)
+// no cambia de modo, como el terminal de VS Code. Por defecto, Zellij 0.45
+// pasa al modo Scroll mientras el panel con el foco no está abajo del todo, y
+// en ese modo los atajos ⌘ del IDE (⌘K ⌘S, ⌘1–⌘5…) no tienen destino y lo que
+// se escribe lo toman sus atajos (e: editar el scrollback, s: buscar…).
+scroll_mode_sync false
+
 // El layout del proyecto es la fuente de verdad: no resucitar sesiones viejas.
 session_serialization false
+
+// Cerrar la pestaña o la ventana de vkTERM.app termina la sesión (y Micro,
+// Claude Code y Codex), como cerrar una ventana de VS Code. Lo que se recuerda
+// de la carpeta (pestañas, zonas, explorador) lo guarda vkTERM sobre la
+// marcha: bin/vkterm-state.
+on_force_close "quit"
 
 keybinds clear-defaults=true {
     normal {
@@ -175,7 +193,6 @@ keybinds clear-defaults=true {
     }
     session {
         bind "o" { SwitchToMode "Normal"; }
-        bind "d" { Detach; }
         bind "]" { FocusHostSession; SwitchToMode "Locked"; }
         bind "[" { FocusGuestSession; SwitchToMode "Locked"; }
         bind "f" { ToggleHostFullscreen; SwitchToMode "Locked"; }
@@ -222,6 +239,13 @@ keybinds clear-defaults=true {
     shared_except "renamepane" "renametab" "entersearch" "locked" {
         bind "Esc" { SwitchToMode "Locked"; }
     }
+    // «Traer el IDE aquí»: `vkterm .` en otra pestaña de vkTERM.app se queda
+    // con la sesión. bin/vkterm-surface detach escribe ⌥` en la pestaña que
+    // la tenía: su cliente se suelta (en cualquier modo) y la sesión sigue
+    // viva, con todo lo que corre en ella, para adjuntarse desde la nueva.
+    shared {
+        bind "Alt `" { Detach; }
+    }
     shared_among "normal" "locked" {
         bind "Alt h" { MoveFocusOrTab "Left"; }
         bind "Alt l" { MoveFocusOrTab "Right"; }
@@ -244,6 +268,25 @@ keybinds clear-defaults=true {
         bind "Alt 7" { MessagePlugin "vkterm" { name "toggle_panel"; }; }
         bind "Alt 8" { MessagePlugin "vkterm" { name "toggle_agents"; }; }
         bind "Alt 9" { MessagePlugin "vkterm" { name "close_tab"; }; }
+        // ⌘N: «Nuevo archivo…» en la carpeta seleccionada del explorador.
+        bind "Alt d" { MessagePlugin "vkterm" { name "new_file"; }; }
+        // ⌘R: «Renombrar…» lo seleccionado en el explorador (VS Code usa F2,
+        // que no todos los teclados tienen).
+        bind "Alt _" { MessagePlugin "vkterm" { name "rename_file"; }; }
+        // ⌘K F: cerrar la carpeta (pregunta si se perdería algo) y volver al
+        // modo terminal.
+        bind "Alt q" { MessagePlugin "vkterm" { name "close_folder"; }; }
+        // ⌃⇧G / ⌘⇧E: la vista de la barra lateral, Control de código fuente o
+        // explorador. ⌘Enter: commit en Control de código fuente.
+        bind "Alt /" { MessagePlugin "vkterm" { name "show_view"; payload "scm"; }; }
+        bind "Alt '" { MessagePlugin "vkterm" { name "show_view"; payload "explorer"; }; }
+        bind "Alt *" { MessagePlugin "vkterm" { name "scm_commit"; }; }
+        // ⌘⇧,: recargar la configuración de Ghostty sin perder el modo IDE.
+        bind "Alt r" { MessagePlugin "vkterm" { name "reload_config"; }; }
+        // ⌘+ / ⌘- / ⌘0: tamaño de letra (bin/vkterm-font), que se recuerda.
+        bind "Alt m" { MessagePlugin "vkterm" { name "font_size"; payload "+1"; }; }
+        bind "Alt w" { MessagePlugin "vkterm" { name "font_size"; payload "-1"; }; }
+        bind "Alt e" { MessagePlugin "vkterm" { name "font_size"; payload "0"; }; }
         // Paleta (⌘P archivos, ⌘⇧P comandos): otra instancia (mode "palette").
         bind "Alt 0" {
             MessagePlugin "vkterm" {
@@ -269,6 +312,8 @@ keybinds clear-defaults=true {
         bind "Alt s" { MessagePlugin "vkterm" { name "edit"; payload "find"; }; }
         bind "Alt x" { MessagePlugin "vkterm" { name "edit"; payload "cut"; }; }
         bind "Alt c" { MessagePlugin "vkterm" { name "edit"; payload "copy"; }; }
+        // ⌘V (tras pegar el texto): imagen del portapapeles a Claude Code o Codex.
+        bind "Alt v" { MessagePlugin "vkterm" { name "paste"; }; }
         // Ventana de atajos: otra instancia del plugin (mode "shortcuts") en
         // un panel flotante; Zellij la lanza si no existe y ella se cierra si ya
         // estaba abierta.
@@ -284,6 +329,22 @@ keybinds clear-defaults=true {
             MessagePlugin "vkterm" {
                 name "toggle_themes"
                 mode "themes"
+                floating true
+            };
+        }
+        // ⌘K ⌘L: selector de fuente, otra instancia (mode "fonts").
+        bind "Alt g" {
+            MessagePlugin "vkterm" {
+                name "toggle_fonts"
+                mode "fonts"
+                floating true
+            };
+        }
+        // ⌘O: «Abrir reciente», otra instancia (mode "recent").
+        bind "Alt b" {
+            MessagePlugin "vkterm" {
+                name "toggle_recent"
+                mode "recent"
                 floating true
             };
         }

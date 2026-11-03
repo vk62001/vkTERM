@@ -1,0 +1,244 @@
+#!/bin/zsh
+# vkTERM — instala los servidores de lenguaje (LSP) y el plugin µlsp de Micro.
+#
+#   bin/vkterm-plugins install [ts python rust swift go]   sin lenguajes: todos menos go
+#   bin/vkterm-plugins status
+#   bin/vkterm-plugins remove [ts python rust swift go]    sin lenguajes: todo
+#
+# Versiones fijas en config/lsp/ (versions, package-lock.json y los parches de
+# µlsp). Se instala en el estado local, config/local/ (o VKTERM_STATE_DIR):
+#
+#   lsp/bin          un ejecutable por servidor, con rutas absolutas: es lo que
+#                    arranca Micro (config/lsp/mlsp.lua)
+#   lsp/node         typescript-language-server, typescript y pyright (npm)
+#   lsp/go           Go, solo con `install go` (gopls lo necesita)
+#   lsp/src/mlsp     el repositorio de µlsp
+#   micro/plug/mlsp  el plugin, con los parches y la configuración de vkTERM
+#
+# Fuera de ahí solo se toca `rustup component add rust-analyzer` (Rust) y las
+# cachés de npm. Swift usa el sourcekit-lsp de Xcode.
+emulate -L zsh
+setopt err_exit no_unset pipe_fail
+
+vkterm_home=${0:A:h:h}
+source $vkterm_home/config/lsp/versions
+state=${VKTERM_STATE_DIR:-$vkterm_home/config/local}
+lsp=$state/lsp
+plug=$state/micro/plug/mlsp
+languages=(ts python rust swift go)
+case $(uname -m) in
+  arm64) arch=arm64 ruff_arch=aarch64 go_arch=arm64 ;;
+  *) arch=x86_64 ruff_arch=x86_64 go_arch=amd64 ;;
+esac
+
+say() { print -r -- "vkterm-plugins: $*" }
+fail() { print -u2 -r -- "vkterm-plugins: $*"; exit 1 }
+
+# Ejecutable de lsp/bin que lanza `$@` (rutas absolutas, sin depender del PATH).
+wrapper() {
+  local name=$1; shift
+  mkdir -p $lsp/bin
+  print -r -- "#!/bin/sh
+# Generado por bin/vkterm-plugins.
+exec ${(j: :)${(q)@}} \"\$@\"" > $lsp/bin/$name
+  chmod +x $lsp/bin/$name
+}
+
+# Descarga $1 en $2 y comprueba su sha256 ($3).
+download() {
+  curl -fsSL --retry 2 -o $2 $1 || fail "no se pudo descargar $1"
+  local sum=$(shasum -a 256 $2 | cut -d' ' -f1)
+  [[ $sum == $3 ]] || fail "sha256 incorrecto en ${1:t} ($sum)"
+}
+
+version_ok() {  # $1 >= $2 (x.y.z)
+  [[ $(printf '%s\n%s\n' $2 $1 | sort -V | head -1) == $2 ]]
+}
+
+# ------------------------------------------------------------------- µlsp
+
+install_mlsp() {
+  local src=$lsp/src/mlsp
+  mkdir -p $lsp
+  if [[ ! -d $src/.git ]]; then
+    say "descargando µlsp…"
+    mkdir -p ${src:h}
+    git clone --quiet $mlsp_repo $src
+  fi
+  if ! git -C $src cat-file -e "$mlsp_commit^{commit}" 2>/dev/null; then
+    git -C $src fetch --quiet origin
+  fi
+  local tmp=$(mktemp -d $lsp/mlsp.XXXXXX)
+  git -C $src archive $mlsp_commit | tar -x -C $tmp
+  # patch(1) y no `git apply`: lsp/ está dentro del repositorio de vkTERM y
+  # git interpretaría las rutas respecto a él.
+  for patch in $vkterm_home/config/lsp/patches/*.patch(N); do
+    patch -s -p1 -d $tmp -i $patch || fail "el parche ${patch:t} no se aplica"
+  done
+  cp $vkterm_home/config/lsp/mlsp.lua $tmp/config.lua
+  print -r -- $mlsp_commit > $tmp/.vkterm-commit
+  rm -rf $plug
+  mkdir -p ${plug:h}
+  mv $tmp $plug
+}
+
+# ------------------------------------------------------------- servidores
+
+# El node del PATH (nvm o Homebrew), con su ruta tal cual: los servidores lo
+# usan con ruta absoluta.
+node=
+install_npm() {
+  [[ -n $node ]] && return
+  node=$(command -v node || true)
+  [[ -n $node ]] || fail "hace falta node >= $node_minimum (no está en el PATH)"
+  local v=$($node --version)
+  version_ok ${v#v} $node_minimum || fail "hace falta node >= $node_minimum ($node es $v)"
+  local npm=${node:h}/npm
+  [[ -x $npm ]] || npm=$(command -v npm)
+  mkdir -p $lsp/node
+  cp $vkterm_home/config/lsp/{package.json,package-lock.json} $lsp/node/
+  # .vkterm-lock: el lockfile de la última instalación completa.
+  if ! cmp -s $lsp/node/package-lock.json $lsp/node/node_modules/.vkterm-lock 2>/dev/null; then
+    say "instalando typescript-language-server, typescript y pyright (npm)…"
+    # Sin scripts de instalación: ninguno de estos los necesita.
+    (cd $lsp/node && PATH=${node:h}:$PATH $npm ci --ignore-scripts --no-audit --no-fund --loglevel=error)
+    cp $lsp/node/package-lock.json $lsp/node/node_modules/.vkterm-lock
+  fi
+}
+
+install_ts() {
+  install_npm
+  wrapper typescript-language-server $node $lsp/node/node_modules/typescript-language-server/lib/cli.mjs
+}
+
+install_python() {
+  install_npm
+  wrapper pyright-langserver $node $lsp/node/node_modules/pyright/langserver.index.js
+  if [[ ! -x $lsp/bin/ruff ]] || [[ $($lsp/bin/ruff --version) != "ruff $ruff_version" ]]; then
+    say "descargando ruff $ruff_version…"
+    local tmp=$(mktemp -d)
+    local sum_var=ruff_sha256_$arch
+    download https://github.com/astral-sh/ruff/releases/download/$ruff_version/ruff-$ruff_arch-apple-darwin.tar.gz \
+      $tmp/ruff.tar.gz ${(P)sum_var}
+    tar -xzf $tmp/ruff.tar.gz -C $tmp
+    mkdir -p $lsp/bin
+    mv $tmp/ruff-$ruff_arch-apple-darwin/ruff $lsp/bin/ruff
+    rm -rf $tmp
+  fi
+}
+
+install_rust() {
+  (( $+commands[rustup] )) || fail "Rust: hace falta rustup (https://rustup.rs)"
+  if ! rust-analyzer --version >/dev/null 2>&1; then
+    say "rustup component add rust-analyzer…"
+    rustup component add rust-analyzer
+  fi
+  # La ruta del proxy de rustup tal cual: decide qué hacer por su nombre.
+  wrapper rust-analyzer $(command -v rust-analyzer)
+}
+
+install_swift() {
+  /usr/bin/xcrun --find sourcekit-lsp >/dev/null 2>&1 || fail "Swift: hace falta Xcode (sourcekit-lsp)"
+  wrapper sourcekit-lsp /usr/bin/xcrun sourcekit-lsp
+}
+
+install_go() {
+  if [[ ! -x $lsp/go/bin/go ]] || [[ $($lsp/go/bin/go env GOVERSION) != go$go_version ]]; then
+    say "descargando Go $go_version (con gopls, unos 450 MB)…"
+    local tmp=$(mktemp -d)
+    local sum_var=go_sha256_$arch
+    download https://go.dev/dl/go$go_version.darwin-$go_arch.tar.gz $tmp/go.tar.gz ${(P)sum_var}
+    rm -rf $lsp/go
+    tar -xzf $tmp/go.tar.gz -C $lsp
+    rm -rf $tmp
+  fi
+  say "compilando gopls $gopls_version…"
+  GOTOOLCHAIN=local GOPATH=$lsp/gopath GOBIN=$lsp/gobin GOFLAGS=-modcacherw \
+    $lsp/go/bin/go install golang.org/x/tools/gopls@$gopls_version
+  # gopls necesita `go` en el PATH.
+  mkdir -p $lsp/bin
+  print -r -- "#!/bin/sh
+# Generado por bin/vkterm-plugins.
+PATH=${(q)lsp}/go/bin:\$PATH exec ${(q)lsp}/gobin/gopls \"\$@\"" > $lsp/bin/gopls
+  chmod +x $lsp/bin/gopls
+}
+
+# ------------------------------------------------------------------ estado
+
+npm_version() {
+  sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' $lsp/node/node_modules/$1/package.json 2>/dev/null | head -1
+}
+
+status() {
+  if [[ -f $plug/.vkterm-commit ]]; then
+    say "µlsp        ${$(<$plug/.vkterm-commit)[1,7]} (Micro: $plug)"
+  else
+    say "µlsp        no instalado"
+  fi
+  local -a check
+  local language out
+  for language in $languages; do
+    case $language in
+      ts) check=(typescript-language-server --version) ;;
+      python) check=(ruff --version) ;;
+      rust) check=(rust-analyzer --version) ;;
+      swift) check=(sourcekit-lsp --help) ;;
+      go) check=(gopls version) ;;
+    esac
+    if [[ ! -x $lsp/bin/$check[1] ]]; then
+      say "${(r:11:)language} no instalado"
+    elif out=$($lsp/bin/$check 2>&1 </dev/null | head -1) && [[ -n $out ]]; then
+      case $language in
+        ts) out="typescript-language-server $out, typescript $(npm_version typescript)" ;;
+        python) out="pyright $(npm_version pyright), $out" ;;
+        swift) out="sourcekit-lsp (Xcode)" ;;
+      esac
+      say "${(r:11:)language} $out"
+    else
+      say "${(r:11:)language} instalado pero no arranca (¿cambió node o la toolchain? vkterm-plugins install $language)"
+    fi
+  done
+}
+
+remove() {
+  local -a targets=($@)
+  (( $#targets )) || targets=($languages)
+  for language in $targets; do
+    case $language in
+      ts) rm -f $lsp/bin/typescript-language-server ;;
+      python) rm -f $lsp/bin/{pyright-langserver,ruff} ;;
+      rust) rm -f $lsp/bin/rust-analyzer ;;
+      swift) rm -f $lsp/bin/sourcekit-lsp ;;
+      go) rm -rf $lsp/bin/gopls $lsp/gobin $lsp/gopath $lsp/go ;;
+      *) fail "lenguaje desconocido: $language (${languages})" ;;
+    esac
+  done
+  if (( ! $# )); then
+    rm -rf $lsp $plug
+  elif [[ ! -x $lsp/bin/typescript-language-server && ! -x $lsp/bin/pyright-langserver ]]; then
+    rm -rf $lsp/node
+  fi
+  say "eliminado: $targets"
+}
+
+# --------------------------------------------------------------- comandos
+
+command=${1:-status}
+(( $# )) && shift
+case $command in
+  install)
+    targets=($@)
+    (( $#targets )) || targets=(ts python rust swift)
+    for language in $targets; do
+      (( ${languages[(Ie)$language]} )) || fail "lenguaje desconocido: $language (${languages})"
+    done
+    install_mlsp
+    for language in $targets; do
+      install_$language
+    done
+    status
+    ;;
+  status) status ;;
+  remove) remove $@ ;;
+  *) fail "uso: vkterm-plugins install|status|remove [${languages}]" ;;
+esac

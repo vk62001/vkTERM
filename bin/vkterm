@@ -1,113 +1,249 @@
 #!/bin/zsh
-# vkTERM — abre (o reanuda) el workspace de Zellij de un proyecto en el
-# terminal actual.
+# vkTERM — el comando `vkterm`, como `code` de VS Code: abre una carpeta en el
+# IDE (explorador, editor con pestañas, Shell, Claude Code y Codex).
 #
-#   bin/vkterm [--new] [DIRECTORIO] [ARCHIVO]
+#   vkterm [--then ACCIÓN] [--here [--new]] [--window] [DIRECTORIO] [ARCHIVO]
+#   vkterm -r [--here] [--window]
+#   vkterm --version
 #
-#   DIRECTORIO  proyecto; por defecto, el directorio actual.
-#   ARCHIVO     archivo que Micro abre al crear la sesión (relativo al
-#               proyecto). Si se omite, se usa la línea `open=` del archivo
-#               .vkterm del proyecto, si existe.
-#   --new       crea siempre una sesión nueva, sin tocar las existentes.
+#   DIRECTORIO  carpeta del proyecto; por defecto, la actual.
+#   ARCHIVO     archivo que se abre en el editor (relativo al proyecto). Si se
+#               omite, las pestañas de la última vez o la línea `open=` del
+#               archivo .vkterm del proyecto.
 #
-# El nombre de la sesión incluye una huella de la configuración de Zellij:
-# mientras la configuración no cambie, el mismo comando reanuda la sesión; si
-# cambia, se crea una sesión nueva en lugar de adjuntarse a una con un layout
-# antiguo. Las sesiones anteriores siguen vivas (zellij list-sessions).
+# Dónde se abre:
+#   - En una pestaña de vkTERM.app en modo terminal: esa misma pestaña pasa a
+#     ser el IDE. El shell queda debajo, intacto; al cerrar la carpeta (⌘K F)
+#     se vuelve a él.
+#   - Si la carpeta ya está abierta en otra pestaña de vkTERM.app, su IDE se
+#     trae a esta con todo vivo (Claude Code, Codex, el Shell, los archivos
+#     sin guardar) y aquella vuelve a su shell: así se pasa el IDE a una
+#     ventana más grande. Una carpeta solo se abre una vez.
+#   - Desde otro terminal o desde el Shell del propio IDE: en una ventana
+#     nueva de vkTERM.app (bin/vkterm-surface open); si la carpeta ya está
+#     abierta, se enfoca su pestaña, como VS Code.
+#   - «Abrir reciente» (⌘O) del IDE con Enter: al cerrar la carpeta, la misma
+#     pestaña abre la elegida (projects/<huella>/next, bin/vkterm-state).
+#
+#   -r, --recent  elige la carpeta en la lista de las ya abiertas (⌘O en el
+#               prompt; bin/vkterm-recent): Enter aquí, ⇧Enter en una ventana
+#               nueva.
+#   --here      el IDE en el terminal actual, sea cual sea, sin modos ni atajos
+#               ⌘ de vkTERM.app (otros emuladores y scripts/smoke-test.py).
+#   --new       con --here: siempre una sesión nueva, aunque ya haya una de la
+#               carpeta (pruebas).
+#   --window    en una ventana nueva de vkTERM.app, aunque se pudiera abrir en
+#               el sitio.
+#   --then      acción al abrir, como los atajos del modo terminal:
+#               show_sidebar (⌘B), show_panel (⌘J), quick_open (⌘P) o
+#               command_palette (⌘⇧P).
+#   --version   la versión de vkTERM (archivo VERSION; cambios en CHANGELOG.md).
 emulate -L zsh
 setopt err_exit no_unset pipe_fail
 
 vkterm_home=${0:A:h:h}
-new_session=0
-if [[ ${1:-} == --new ]]; then
-  new_session=1
+bin=$vkterm_home/bin
+here=0 new=0 recent=0 window=0 then=
+while (( $# )); do
+  case $1 in
+    --here) here=1 ;;
+    --new) new=1 ;;
+    -r|--recent) recent=1 ;;
+    --window) window=1 ;;
+    --version) print -r -- "vkTERM $(<$vkterm_home/VERSION)"; exit 0 ;;
+    --then) then=${2:?falta la acción de --then}; shift ;;
+    --) shift; break ;;
+    -*) print -u2 "vkterm: opción desconocida: $1"; exit 2 ;;
+    *) break ;;
+  esac
   shift
+done
+if (( new && ! here )); then
+  print -u2 "vkterm: --new solo vale con --here: en vkTERM.app una carpeta se abre una vez y \`vkterm\` va a su pestaña."
+  exit 2
+fi
+
+# En el sitio: en una pestaña de vkTERM.app en modo terminal (o con --here).
+in_place=0
+if (( here )) || [[ -z ${ZELLIJ:-} && -n ${VKTERM_APP_ID:-} && ${TERM_PROGRAM:-} == ghostty ]]; then
+  (( window )) || in_place=1
+fi
+
+if (( recent )); then
+  choice=$($bin/vkterm-recent ${${in_place:#1}:+--window}) || exit 0
+  [[ ${choice%%$'\t'*} == window ]] && in_place=0
+  set -- "${choice#*$'\t'}"
 fi
 project=${1:-$PWD}
-open_file=${2:-}
-
+file=${2:-}
 if [[ ! -d $project ]]; then
   print -u2 "vkterm: no existe el directorio: $project"
   exit 1
 fi
 project=${project:A}
+export VKTERM_THEN=$then
 
-if [[ -n ${ZELLIJ:-} ]]; then
-  print -u2 "vkterm: ya estás dentro de una sesión de Zellij; ábrelo desde un terminal normal."
-  exit 1
+# Como VS Code: si la carpeta ya está abierta, se va a su pestaña. Si la
+# pestaña ya no existe (se cerró la ventana sin que bin/vkterm pudiera borrar
+# el archivo), se abre de nuevo.
+focus_open() {
+  local surface=$($bin/vkterm-state dir $1)/surface pid id
+  [[ -f $surface ]] || return 1
+  pid=$(sed -n 's/^pid=//p' $surface) id=$(sed -n 's/^id=//p' $surface)
+  if [[ -n $pid && -n $id ]] && kill -0 $pid 2>/dev/null \
+      && VKTERM_APP_ID=$(sed -n 's/^app=//p' $surface) $bin/vkterm-surface focus $id; then
+    print -u2 "vkterm: ${1/#$HOME/~} ya está abierta en otra pestaña: vamos a ella."
+    return 0
+  fi
+  rm -f $surface
+  return 1
+}
+
+# «Traer el IDE aquí»: si la carpeta está abierta en otra pestaña de esta app,
+# aquella suelta su sesión de Zellij (bin/vkterm-surface detach), vuelve a su
+# shell y avisa; esta espera a que su bin/vkterm termine y se adjunta a la
+# sesión (attach) con todo lo que corre en ella. 0: traída; 1: no está abierta
+# en otra pestaña; 2: no se puede traer (otra app, una pestaña de una versión
+# de vkTERM que no anotaba su sesión, o no respondió): se va a ella.
+attach=
+take_over() {
+  local memory=$($bin/vkterm-state dir $1) pid other app session
+  [[ -f $memory/surface ]] || return 1
+  pid=$(sed -n 's/^pid=//p' $memory/surface) other=$(sed -n 's/^id=//p' $memory/surface)
+  app=$(sed -n 's/^app=//p' $memory/surface) session=$(sed -n 's/^session=//p' $memory/surface)
+  if [[ -z $pid || -z $other ]] || ! kill -0 $pid 2>/dev/null; then
+    rm -f $memory/surface
+    return 1
+  fi
+  if [[ -z $session || $app != $VKTERM_APP_ID ]]; then
+    print -u2 "vkterm: ${1/#$HOME/~} no se puede traer de su pestaña (se abrió con una versión anterior de vkTERM o en otra app); ciérrala allí con ⌘K F para abrirla aquí."
+    return 2
+  fi
+  print $$ > $memory/handoff
+  if $bin/vkterm-surface detach $other; then
+    for _ in {1..100}; do
+      kill -0 $pid 2>/dev/null || break
+      sleep 0.1
+    done
+  fi
+  rm -f $memory/handoff
+  if kill -0 $pid 2>/dev/null; then
+    print -u2 "vkterm: la pestaña de ${1/#$HOME/~} no soltó el IDE."
+    return 2
+  fi
+  attach=$session
+}
+
+if (( ! here )); then
+  if [[ -n ${ZELLIJ:-} && $project == ${VKTERM_PROJECT:-} ]]; then
+    print -u2 "vkterm: esta carpeta ya está abierta en este IDE."
+    exit 0
+  fi
+  # En el sitio se trae aquí (take_over, al reclamar la pestaña).
+  if (( ! in_place )) && focus_open $project; then
+    exit 0
+  fi
 fi
 
-for tool in zellij micro; do
-  if (( ! $+commands[$tool] )); then
-    print -u2 "vkterm: no se encuentra '$tool' en el PATH (ver scripts/doctor.sh)."
+# Ventana nueva: fuera de una pestaña de vkTERM.app en modo terminal, o con
+# --window o ⇧Enter en la lista de recientes.
+open_window() {
+  if [[ -z ${VKTERM_APP_ID:-} && ! -d $($bin/vkterm-app path) ]]; then
+    print -u2 "vkterm: falta vkTERM.app; créala con: $bin/vkterm-app install"
+    print -u2 "        (o abre el IDE en este terminal con: vkterm --here ${(q)project})"
     exit 1
   fi
-done
+  [[ -z $file ]] || print -u2 "vkterm: la ventana nueva abre la carpeta; el archivo se omite."
+  $bin/vkterm-surface open $project $then
+  exit 0
+}
+(( in_place )) || open_window
 
-# Plugin vkterm (explorador y controlador): se compila si falta o cambió.
-$vkterm_home/scripts/build-plugins.sh --if-needed
-
-if [[ -z $open_file && -f $project/.vkterm ]]; then
-  while IFS='=' read -r key value; do
-    if [[ $key == open && -f $project/$value ]]; then
-      open_file=$value
+# En el sitio, una carpeta detrás de otra: «Abrir reciente» con Enter deja en
+# la memoria de la carpeta la siguiente (next) y cierra la sesión. La pestaña
+# sigue en modo IDE entre las dos.
+id= surface=
+next_folder() {
+  local memory=$($bin/vkterm-state dir $project) next=
+  [[ -f $memory/next ]] && next=$(<$memory/next)
+  rm -f $memory/next
+  [[ -n $next && -d $next && $next != $project ]] || return 1
+  # Si entretanto se abrió en otra pestaña, se trae aquí; si no se puede, se
+  # va a ella y esta vuelve al shell.
+  if (( ! here )); then
+    local taken=0
+    take_over $next || taken=$?
+    if (( taken == 2 )) && focus_open $next; then
+      return 1
     fi
-  done < $project/.vkterm
+  fi
+  project=$next file= then=
+  export VKTERM_THEN=
+}
+moved=
+workspaces() {
+  local code memory args
+  while true; do
+    memory=$($bin/vkterm-state dir $project)
+    rm -f $memory/next
+    args=(${${new:#0}:+--new})
+    if [[ -n $id ]]; then
+      surface=$memory/surface
+      print -l "id=$id" "pid=$$" "app=$VKTERM_APP_ID" > $surface
+      args+=(--surface $surface)
+      # ⌘T durante el IDE abre la pestaña nueva en la carpeta del proyecto.
+      print -n "\e]7;file://${HOST}${project}\a" > /dev/tty
+    fi
+    [[ -z $attach ]] || args+=(--attach $attach)
+    code=0
+    $bin/vkterm-workspace $args $project ${file:+"$file"} || code=$?
+    [[ -z $surface ]] || rm -f $surface
+    new=0 attach=
+    # Otra pestaña se trajo el IDE (take_over): esta vuelve a su shell.
+    if [[ -f $memory/handoff ]]; then
+      moved=$project
+      return 0
+    fi
+    next_folder || return $code
+  done
+}
+
+if (( here )); then
+  workspaces
+  exit
 fi
 
-# Nombre corto y estable: vk-<proyecto>-<huella>. La huella (6 hex) mezcla la
-# ruta del proyecto (distingue proyectos con igual nombre) y la configuración
-# de Zellij (si cambia, sesión nueva). Con --new se añade un sufijo aleatorio.
-#
-# El socket de Zellij vive en $TMPDIR/zellij-<uid>/contract_version_N/<sesión>
-# y macOS limita esa ruta a 103 bytes: en un Mac típico quedan 24 para el
-# nombre. Se calcula el presupuesto real y se recorta el nombre del proyecto.
-zellij_dir=$vkterm_home/config/zellij
-name=${${project:t}//[^A-Za-z0-9_-]/-}
-fingerprint=$( { print -rn -- $project; cat $zellij_dir/config.kdl $zellij_dir/layouts/vkterm.kdl; } | md5 | cut -c1-6)
-suffix=
-if (( new_session )); then
-  suffix="-$(printf %04x $(( RANDOM % 65536 )))"
-fi
-sock_dir=${ZELLIJ_SOCKET_DIR:-${TMPDIR:-/tmp}/zellij-$UID}
-sock_dir=${sock_dir%/}
-contract_dirs=($sock_dir/contract_version_*(N/))
-contract=${${contract_dirs[-1]:-contract_version_1}:t}
-# 104 = límite de macOS (sockaddr_un); el nombre debe dejar la ruta por debajo.
-max_name=$(( 104 - 1 - ${#sock_dir} - 1 - ${#contract} - 1 ))
-max_project=$(( max_name - 3 - 1 - ${#fingerprint} - ${#suffix} ))
-if (( max_project < 1 )); then
-  print -u2 "vkterm: la ruta de sockets de Zellij es demasiado larga ($sock_dir); exporta ZELLIJ_SOCKET_DIR con una ruta corta."
-  exit 1
-fi
-session="vk-${${name[1,$max_project]}%%-#}-${fingerprint}${suffix}"
-
-# Estado local, fuera de git: el tema elegido (bin/vkterm-theme) y lo que
-# Micro guarda por su cuenta (cursores, copias, historial, `set`). La
-# configuración de Micro de vkTERM se copia en cada arranque.
-state=${VKTERM_STATE_DIR:-$vkterm_home/config/local}
-mkdir -p $state/micro
-cp -R $vkterm_home/config/micro/{settings.json,bindings.json,colorschemes} $state/micro/
-
-# Solo afectan a los procesos de esta sesión (Zellij, Micro y los paneles).
-export VKTERM_HOME=$vkterm_home          # config.kdl localiza el plugin con ella
-export VKTERM_STATE_DIR=$state
-export VKTERM_PROJECT=$project
-export VKTERM_OPEN_FILE=$open_file       # lo lee bin/vkterm-editor
-export EDITOR=micro VISUAL=micro          # git y los agentes abren Micro
-export MICRO_CONFIG_HOME=$state/micro
-path=($vkterm_home/bin $path)             # vkterm-editor, vkterm-shell, vkterm-open, vkterm-theme
-
-if zellij list-sessions --no-formatting 2>/dev/null \
-    | grep -v EXITED | grep -q "^$session "; then
-  exec zellij --config-dir $zellij_dir attach $session
+# Un título único (OSC 2) identifica esta pestaña ante AppleScript; si no se
+# encuentra (p. ej. dentro de tmux), ventana nueva.
+nonce=vkterm-$$-$RANDOM$RANDOM
+print -n "\e]2;$nonce\a" > /dev/tty
+if ! id=$($bin/vkterm-surface claim $nonce) || [[ -z $id ]]; then
+  print -u2 "vkterm: vkTERM.app no encuentra esta pestaña; se abre en una ventana nueva."
+  focus_open $project && exit 0
+  open_window
 fi
 
-# Una sesión nueva arranca con el tema de Zellij guardado; config.kdl lleva el
-# predeterminado.
-zellij_theme=$(vkterm-theme value zellij)
-theme_option=()
-[[ -n $zellij_theme ]] && theme_option=(options --theme $zellij_theme)
+taken=0
+take_over $project || taken=$?
+if (( taken == 2 )) && focus_open $project; then
+  $bin/vkterm-surface release $id || true
+  exit 0
+fi
 
-cd $project
-exec zellij --config-dir $zellij_dir --session $session $theme_option
+restore() {
+  $bin/vkterm-surface release $id || true
+  ( sleep 3; $bin/vkterm-surface settle $id ) >/dev/null 2>&1 &!
+  # Como al salir de vim: el cursor vuelve a donde estaba y se borra lo que
+  # Zellij deja debajo ("Bye from Zellij!"). Y la carpeta del shell para
+  # Ghostty (⌘T abre ahí la pestaña nueva).
+  print -n "\e8\e[J\e]7;file://${HOST}${PWD}\a" > /dev/tty 2>/dev/null || true
+}
+# Al cerrar la pestaña (SIGHUP) ya no hay terminal que restaurar.
+trap '[[ -z $surface ]] || rm -f $surface; exit 129' HUP
+# \e7 guarda la posición del cursor para restore().
+print -n "\e7" > /dev/tty
+code=0
+workspaces || code=$?
+restore
+[[ -z $moved ]] || print -u2 "vkterm: ${moved/#$HOME/~} pasó a otra pestaña, con todo lo que tenía abierto."
+exit $code

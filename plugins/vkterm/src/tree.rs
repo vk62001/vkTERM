@@ -120,6 +120,13 @@ impl Tree {
         self.selected = rows.get(index).map(|r| r.path.clone());
     }
 
+    /// Selecciona la fila `index` sin activarla (clic derecho).
+    pub fn select_at(&mut self, index: usize) -> bool {
+        let rows = self.rows();
+        self.select_index(&rows, index);
+        index < rows.len()
+    }
+
     pub fn move_by(&mut self, delta: isize) {
         let rows = self.rows();
         if rows.is_empty() {
@@ -239,6 +246,43 @@ impl Tree {
         let max = self.rows().len().saturating_sub(height) as isize;
         self.scroll = (self.scroll as isize + delta).clamp(0, max.max(0)) as usize;
     }
+
+    /// Carpetas desplegadas, de fuera hacia dentro (para la memoria).
+    pub fn expanded_dirs(&self) -> Vec<PathBuf> {
+        self.expanded.iter().cloned().collect()
+    }
+
+    pub fn selected_path(&self) -> Option<PathBuf> {
+        self.selected.clone()
+    }
+
+    /// Selecciona `path` y despliega sus carpetas, como VS Code con un archivo
+    /// recién creado. Devuelve esas carpetas, de la raíz hacia dentro: hay que
+    /// volver a leerlas, porque el archivo (y quizá alguna carpeta) es nuevo.
+    pub fn reveal(&mut self, path: &Path) -> Vec<PathBuf> {
+        let mut dirs: Vec<PathBuf> = path.ancestors().skip(1).map(Path::to_path_buf).collect();
+        dirs.reverse();
+        self.expanded.extend(dirs.iter().filter(|d| !d.as_os_str().is_empty()).cloned());
+        self.selected = Some(path.to_path_buf());
+        dirs
+    }
+
+    /// Vuelve a desplegar las carpetas de la memoria y la selección. Devuelve
+    /// las carpetas que hay que leer del disco, de fuera hacia dentro: cada
+    /// una se ve cuando está leída la anterior. Las que ya no existen las
+    /// quita el plugin con `forget` al no poder leerlas.
+    pub fn restore(&mut self, expanded: &[PathBuf], selected: Option<PathBuf>) -> Vec<PathBuf> {
+        let mut dirs: Vec<PathBuf> = expanded.to_vec();
+        dirs.sort_by_key(|d| d.components().count());
+        dirs.dedup();
+        for dir in &dirs {
+            self.expanded.insert(dir.clone());
+        }
+        if selected.is_some() {
+            self.selected = selected;
+        }
+        dirs.into_iter().filter(|d| !self.is_loaded(d)).collect()
+    }
 }
 
 #[cfg(test)]
@@ -336,6 +380,39 @@ mod tests {
         let mut t = demo();
         assert_eq!(t.click(3), Action::Open(PathBuf::from("README.md")));
         assert_eq!(t.click(99), Action::None);
+    }
+
+    #[test]
+    fn restaurar_carpetas_y_seleccion() {
+        let mut t = demo();
+        let to_load = t.restore(
+            &[PathBuf::from("src/app"), PathBuf::from("src"), PathBuf::from("Build")],
+            Some(PathBuf::from("src/main.rs")),
+        );
+        // src ya estaba leída; las demás se leen de fuera hacia dentro.
+        assert_eq!(to_load, [PathBuf::from("Build"), PathBuf::from("src/app")]);
+        assert_eq!(names(&t), ["Build", "src", "  app", "  Lib.rs", "  main.rs", ".vkterm", "README.md"]);
+        assert_eq!(t.selected().unwrap().path, PathBuf::from("src/main.rs"));
+        assert_eq!(t.expanded_dirs(), [PathBuf::from("Build"), PathBuf::from("src"), PathBuf::from("src/app")]);
+    }
+
+    #[test]
+    fn restaurar_una_carpeta_borrada() {
+        let mut t = demo();
+        t.restore(&[PathBuf::from("vieja")], Some(PathBuf::from("vieja/x.rs")));
+        t.forget(Path::new("vieja")); // el plugin no pudo leerla
+        assert!(t.expanded_dirs().is_empty());
+        assert_eq!(t.selected().unwrap().path, PathBuf::from("Build"));
+    }
+
+    #[test]
+    fn mostrar_un_archivo_nuevo() {
+        let mut t = demo();
+        let to_load = t.reveal(Path::new("src/app/nuevo.rs"));
+        assert_eq!(to_load, [PathBuf::from(""), PathBuf::from("src"), PathBuf::from("src/app")]);
+        t.set_listing(Path::new("src/app"), entries(&[("nuevo.rs", false)]));
+        assert_eq!(names(&t)[..4], ["Build", "src", "  app", "    nuevo.rs"]);
+        assert_eq!(t.selected().unwrap().path, PathBuf::from("src/app/nuevo.rs"));
     }
 
     #[test]

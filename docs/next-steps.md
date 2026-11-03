@@ -1,5 +1,105 @@
 # Próximos pasos: GitHub y plugins
 
+## 0e. Control de código fuente (⌃⇧G), 03-11-2026 (sin publicar, rama `temas-vscode`)
+
+El hito H2 de la Fase 2, adelantado a petición del usuario («no veo mis
+archivos modificados ni si tengo conflictos entre ramas»). Hecho: la vista
+Control de código fuente en la barra lateral (⌃⇧G, ⌘⇧E vuelve al
+explorador), los colores de git en el explorador, el aviso en la barra de
+estado y, además de lo del plan, los conflictos que habría al fusionar `main`
+(u otra rama) antes de fusionar. Detalle en [architecture.md](architecture.md)
+(«Control de código fuente») y [keybindings.md](keybindings.md).
+
+Pendiente:
+
+1. Lista manual con el teclado físico: sección R de
+   [manual-tests.md](manual-tests.md). La R4 es la importante: que ⌘Enter
+   haga commit y no ponga la ventana en pantalla completa.
+2. `scripts/smoke-test.py --ghostty`, que ahora también prueba ⌃⇧G, ⌘Enter y
+   ⌘⇧E con teclas sintetizadas.
+3. Quizá, como VS Code: un editor de diferencias lado a lado (hoy es el
+   paginador de git), ver los cambios por línea en el margen del editor, y
+   «Iniciar repositorio» en una carpeta sin git.
+
+## 0d. Traer el IDE aquí y Ghostty sin el indicador, 28-10-2026 (sin publicar, rama `temas-vscode`)
+
+Hecho: `vkterm .` en una pestaña de vkTERM.app trae el IDE de una carpeta
+abierta en otra, con todo vivo; Ghostty compilado sin el botón «⌨ vkterm»
+(`scripts/build-ghostty.sh`, `patches/ghostty`) y el distintivo «⌨ vkTERM»
+en la barra de estado. Detalle en [architecture.md](architecture.md)
+(«`vkterm`» y las decisiones).
+
+Pendiente:
+
+1. ~~Crear vkTERM.app con la compilación~~: hecho el 03-11-2026
+   (`bin/vkterm-app install`, en /Applications, con los parches de vkTERM).
+2. Lista manual con el teclado físico: A1, K8, K15, K20, K21 y K22 de
+   [manual-tests.md](manual-tests.md).
+3. `scripts/smoke-test.py --ghostty`, que ahora también prueba el traspaso
+   entre dos ventanas: no se ejecutó (vkTERM Test.app hay que crearla de
+   nuevo y pide permisos).
+
+## 0c. «Abrir reciente» (⌘O), 27-10-2026 (sin publicar, rama `temas-vscode`)
+
+Hecho: la lista de carpetas ya abiertas en los dos modos, Enter en la misma
+pestaña y ⇧Enter en una ventana nueva, y el aviso de `vkterm .` cuando la
+carpeta ya está abierta. Detalle en [architecture.md](architecture.md)
+(«`vkterm`») y [keybindings.md](keybindings.md).
+
+Pendiente:
+
+1. Lista manual con el teclado físico: K15–K20 de
+   [manual-tests.md](manual-tests.md). La K16 y la K17 son las importantes:
+   que Ghostty envíe ⇧Enter como `ESC [13;2u` a la lista del modo terminal
+   (en las pruebas PTY se envían esos bytes; no son pulsaciones de verdad).
+2. `scripts/smoke-test.py --ghostty`: no se ejecutó, porque desde vkTERM.app
+   el AppleScript a vkTERM Test pide un permiso nuevo.
+3. Quizá: quitar una carpeta de la lista (VS Code tiene la ✕). Hoy sale de
+   ella si se borra su memoria en `config/local/projects/`.
+
+## 0b. Temas de VS Code, fuente y brackets (versión 0.3.0, rama `temas-vscode`)
+
+Hecho: 24 temas de VS Code con sus colores reales (terminal, resaltado e
+interfaz), selector de fuente (⌘K ⌘L), ⌘+ ⌘- ⌘0 y brackets (pareja
+resaltada, guías de sangría, cierre y envolver la selección). Detalle en
+[architecture.md](architecture.md) («Temas», «Fuente» y «Brackets»).
+
+Pendiente:
+
+1. Lista manual con el teclado físico: secciones J, N y O de
+   [manual-tests.md](manual-tests.md). La N4 es la importante: que ⌘+ en el
+   IDE cambie el tamaño de todas las ventanas (y no solo la pestaña, como
+   haría el menú de Ghostty).
+2. Colores por nivel de los brackets (Bracket Pair Colorization): Micro no
+   lo permite sin modificarlo. Opciones, si se quiere: un parche propio de
+   Micro (como los de µlsp) o proponerlo al proyecto Micro.
+3. Reglas de sintaxis más finas para algún lenguaje, si el resaltado se
+   aleja mucho del de VS Code (archivos `syntax/` propios de Micro).
+
+## 0. Modo terminal ⇄ IDE (versión 0.2.0, 23-10-2026, rama `modo-terminal`)
+
+vkTERM pasa a ser el terminal de todos los días (vkTERM.app) y `vkterm .`
+convierte la pestaña en el IDE. La Fase 2 queda en pausa: este trabajo se
+entrega de una vez, sin fases. Detalle en [architecture.md](architecture.md)
+(«Modo terminal y modo IDE») y [keybindings.md](keybindings.md).
+
+Pendiente:
+
+1. **Fusionar `modo-terminal` en `main`** cuando la lista manual esté
+   hecha. La rama está en GitHub; los cambios, en [CHANGELOG.md](../CHANGELOG.md).
+2. **Abrir vkTERM.app** (en ~/Applications, o en /Applications si la mueves) desde el Dock o
+   Finder. macOS pedirá acceso al disco externo; pulsa Permitir. Comprueba
+   que abre una ventana: desde un proceso en segundo plano, ni Ghostty.app
+   ni su copia abren la ventana inicial, porque macOS no los activa.
+3. **Lista manual** con el teclado físico: secciones K (modo terminal),
+   L (⌘K F) y M (memoria), además de C2 (⌃Tab en el IDE, que las pruebas
+   automáticas no pueden comprobar sin traer la ventana al frente):
+   [manual-tests.md](manual-tests.md).
+4. `bin/vkterm-app install --link` si quieres que `~/.local/bin/vkterm`
+   apunte a `bin/vkterm` (hoy apunta a `bin/vkterm-ghostty`, que ahora solo
+   le pasa los argumentos).
+5. Después de cada actualización de Ghostty: `bin/vkterm-app install`.
+
 Estado al 21-10-2026 (noche). Lo hecho esta noche está en
 [phase-1-report.md](phase-1-report.md), secciones 10 a 12:
 

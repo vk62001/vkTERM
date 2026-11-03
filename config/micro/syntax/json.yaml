@@ -1,0 +1,28 @@
+# vkTERM: JSON como en VS Code. Acepta comentarios (// y /* */), igual que
+# «JSON con comentarios» (tsconfig.json, .vscode/settings.json…), y las comas
+# finales, y los pinta con el color de comentario del tema.
+filetype: json
+
+detect:
+    filename: "\\.(json|jsonc|json5|code-workspace|webmanifest|babelrc|eslintrc)$"
+
+rules:
+    - constant.number: "\\b[-+]?([1-9][0-9]*|0)([.][0-9]+)?([eE][+-]?[0-9]+)?\\b"
+    - constant.bool: "\\b(true|false|null)\\b"
+    - constant.string:
+        start: "\""
+        end: "\""
+        skip: "\\\\."
+        rules:
+            - constant.specialChar: "\\\\u[0-9A-Fa-f]{4}"
+            - constant.specialChar: "\\\\[bfnrt'\"\\\\/]"
+    - comment:
+        start: "//"
+        end: "$"
+        rules:
+            - todo: "(TODO|FIXME|XXX):?"
+    - comment:
+        start: "/\\*"
+        end: "\\*/"
+        rules:
+            - todo: "(TODO|FIXME|XXX):?"

@@ -1,0 +1,118 @@
+#!/bin/zsh
+# vkTERM — fuente y tamaño de letra de vkTERM.app (⌘K ⌘L, ⌘+, ⌘- y ⌘0).
+#
+#   vkterm-font list           fuentes monoespaciadas instaladas, una por línea
+#                              (la primera, «(predeterminada)»: la de Ghostty)
+#   vkterm-font current        "<fuente>\t<tamaño>" de lo guardado
+#   vkterm-font set FUENTE     la guarda y Ghostty la aplica
+#   vkterm-font size +N|-N|N|0 cambia el tamaño (0: el predeterminado, 13)
+#
+# Lo usan el plugin vkterm (el selector de fuentes, src/fonts.rs, y ⌘+ ⌘- ⌘0
+# en el IDE) y la integración de zsh (⌘+ ⌘- ⌘0 en el prompt). Guarda
+# local/font.ghostty (o en VKTERM_STATE_DIR), que config/ghostty/vkterm.ghostty
+# incluye después de user.ghostty: lo elegido aquí manda sobre ese archivo.
+#
+# - La fuente necesita recargar Ghostty (bin/vkterm-theme reload, que después
+#   devuelve el modo IDE a sus pestañas).
+# - El tamaño no: se pone en todas las pestañas de vkTERM.app por AppleScript
+#   (`set_font_size`). Al recargar, las pestañas en modo IDE pierden sus
+#   atajos un momento y un segundo ⌘+ seguido se perdería.
+emulate -L zsh
+setopt no_unset pipe_fail extended_glob
+
+vkterm_home=${0:A:h:h}
+state=${VKTERM_STATE_DIR:-$vkterm_home/config/local}
+file=$state/font.ghostty
+ghostty=${VKTERM_GHOSTTY_APP:-/Applications/Ghostty.app}/Contents/MacOS/ghostty
+DEFAULT_LABEL="(predeterminada)"
+DEFAULT_SIZE=13
+MIN_SIZE=6
+MAX_SIZE=48
+
+family() {
+  [[ -f $file ]] || return 0
+  sed -n 's/^font-family = "\(..*\)"$/\1/p' $file | tail -1
+}
+
+size() {
+  local value=
+  [[ -f $file ]] && value=$(sed -n 's/^font-size = //p' $file | tail -1)
+  print -r -- ${value:-$DEFAULT_SIZE}
+}
+
+# La fuente y el tamaño pueden cambiar a la vez (el selector manda los dos):
+# cada cambio lee y escribe el archivo con el cerrojo puesto.
+lock() {
+  mkdir -p $state
+  local i
+  for i in {1..100}; do
+    mkdir $state/font.lock 2>/dev/null && return
+    sleep 0.05
+  done
+  # Un cerrojo de más de 5 s es de un proceso que murió: se sigue.
+}
+
+unlock() {
+  rmdir $state/font.lock 2>/dev/null || true
+}
+
+# El tamaño en todas las pestañas de la app (VKTERM_APP_ID, que exporta su
+# lanzador), sin recargar.
+apply_size() {
+  local app_id=${VKTERM_APP_ID:-}
+  [[ $app_id == [A-Za-z0-9.-]## ]] || return 0
+  osascript -e "tell application id \"$app_id\"
+  repeat with t in (every terminal)
+    perform action \"set_font_size:$1\" on t
+  end repeat
+end tell" >/dev/null 2>&1 || true
+}
+
+save() {  # $1 fuente (vacía: la predeterminada), $2 tamaño
+  {
+    print "# vkTERM — fuente elegida con ⌘K ⌘L y tamaño (⌘+, ⌘-, ⌘0). La escribe"
+    print "# bin/vkterm-font: tus ajustes van en config/local/user.ghostty."
+    print 'font-family = ""'
+    [[ -n $1 ]] && print -r -- "font-family = \"$1\""
+    print -r -- "font-size = $2"
+  } > $file.tmp && mv $file.tmp $file
+}
+
+case ${1:-} in
+  list)
+    print -r -- $DEFAULT_LABEL
+    [[ -x $ghostty ]] && $ghostty +list-fonts 2>/dev/null | grep -v '^[[:space:]]' | grep -v '^$'
+    ;;
+  current)
+    current=$(family)
+    print -r -- "${current:-$DEFAULT_LABEL}"$'\t'"$(size)"
+    ;;
+  set)
+    chosen=${2?uso: vkterm-font set FUENTE}
+    [[ $chosen == $DEFAULT_LABEL ]] && chosen=
+    [[ $chosen != *[\"$'\n']* ]] || { print -u2 "vkterm-font: nombre de fuente no válido"; exit 2; }
+    lock
+    save "$chosen" $(size)
+    unlock
+    $vkterm_home/bin/vkterm-theme reload
+    ;;
+  size)
+    arg=${2?uso: vkterm-font size +N|-N|N|0}
+    [[ $arg == ([+-]|)[0-9]## ]] || { print -u2 "uso: vkterm-font size +N|-N|N|0"; exit 2; }
+    lock
+    case $arg in
+      0) new=$DEFAULT_SIZE ;;
+      [+-]*) new=$(( $(size) + arg )) ;;
+      *) new=$arg ;;
+    esac
+    (( new < MIN_SIZE )) && new=$MIN_SIZE
+    (( new > MAX_SIZE )) && new=$MAX_SIZE
+    save "$(family)" $new
+    unlock
+    apply_size $new
+    ;;
+  *)
+    print -u2 "uso: vkterm-font list | current | set FUENTE | size +N|-N|N|0"
+    exit 2
+    ;;
+esac

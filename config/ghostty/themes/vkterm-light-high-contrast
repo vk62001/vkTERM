@@ -1,0 +1,23 @@
+# Light High Contrast. Generado por scripts/gen-themes.py: no editar.
+background = #ffffff
+foreground = #292929
+cursor-color = #0f4a85
+cursor-text = #ffffff
+selection-background = #0f4a85
+selection-foreground = #ffffff
+palette = 0=#292929
+palette = 1=#cd3131
+palette = 2=#136c13
+palette = 3=#949800
+palette = 4=#0451a5
+palette = 5=#bc05bc
+palette = 6=#0598bc
+palette = 7=#555555
+palette = 8=#666666
+palette = 9=#cd3131
+palette = 10=#00bc00
+palette = 11=#b5ba00
+palette = 12=#0451a5
+palette = 13=#bc05bc
+palette = 14=#0598bc
+palette = 15=#a5a5a5

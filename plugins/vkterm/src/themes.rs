@@ -1,135 +1,116 @@
 //! Temas de color (⌘K ⌘T), como "Preferences: Color Theme" de VS Code. Cada
-//! tema reúne lo que necesita cada pieza: el tema de Ghostty, el de Zellij, el
-//! esquema de Micro y los colores de los paneles sin foco.
+//! tema es uno de VS Code y de él salen, con el mismo nombre (`vkterm-<id>`):
+//! - la paleta del terminal de Ghostty (config/ghostty/themes);
+//! - el resaltado y la interfaz del editor (config/micro/colorschemes);
+//! - la interfaz de Zellij y del plugin: barra lateral, listas, barra de
+//!   estado y marcos (config/zellij/themes/vkterm.kdl).
 //!
-//! bin/vkterm-theme guarda el elegido en config/local (o VKTERM_STATE_DIR) y lo
-//! aplica a Ghostty y a Micro; el plugin cambia el de Zellij (`reconfigure`).
+//! scripts/gen-themes.py los genera, con esta tabla (src/themes_data.rs), a
+//! partir de config/themes/themes.json. bin/vkterm-theme guarda el elegido en
+//! config/local (o VKTERM_STATE_DIR) y lo aplica a Ghostty y a Micro; el
+//! explorador cambia el de Zellij (`reconfigure`).
+pub use crate::themes_data::{DEFAULT, THEMES};
+use crate::style::Rgb;
 
-pub struct Theme {
-    pub id: &'static str,
-    pub name: &'static str,
-    pub dark: bool,
-    /// Tema de Ghostty: uno de los suyos o un archivo de config/ghostty/themes.
-    pub ghostty: &'static str,
-    /// Tema de Zellij: uno de los suyos o de config/zellij/themes.
-    pub zellij: &'static str,
-    /// Color del texto y del fondo de los paneles sin foco.
-    pub inactive_fg: &'static str,
-    pub inactive_bg: &'static str,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Dark,
+    Light,
+    HighContrastDark,
+    HighContrastLight,
 }
 
-impl Theme {
-    /// Esquema de Micro (config/micro/colorschemes): usa la paleta del
-    /// terminal, solo cambian los contrastes de los temas claros.
-    pub fn micro(&self) -> &'static str {
-        if self.dark {
-            "vkterm"
-        } else {
-            "vkterm-light"
+impl Kind {
+    pub fn is_dark(self) -> bool {
+        matches!(self, Kind::Dark | Kind::HighContrastDark)
+    }
+
+    /// Grupo del selector, en el orden de VS Code: claros, oscuros y alto
+    /// contraste.
+    pub fn group(self) -> &'static str {
+        match self {
+            Kind::Light => "temas claros",
+            Kind::Dark => "temas oscuros",
+            Kind::HighContrastDark | Kind::HighContrastLight => "temas de alto contraste",
         }
     }
 }
 
-pub const DEFAULT: &str = "catppuccin-mocha";
+/// Orden de los grupos en el selector.
+pub const GROUPS: [&str; 3] = ["temas claros", "temas oscuros", "temas de alto contraste"];
 
-pub const THEMES: &[Theme] = &[
-    Theme {
-        id: "catppuccin-mocha",
-        name: "Catppuccin Mocha",
-        dark: true,
-        ghostty: "Catppuccin Mocha",
-        zellij: "catppuccin-mocha",
-        inactive_fg: "#6c7086",
-        inactive_bg: "#11111b",
-    },
-    Theme {
-        id: "catppuccin-latte",
-        name: "Catppuccin Latte",
-        dark: false,
-        ghostty: "Catppuccin Latte",
-        zellij: "catppuccin-latte",
-        inactive_fg: "#9ca0b0",
-        inactive_bg: "#dce0e8",
-    },
-    Theme {
-        id: "dark-modern",
-        name: "Dark Modern (VS Code)",
-        dark: true,
-        ghostty: "Dark Modern",
-        zellij: "vkterm-dark-modern",
-        inactive_fg: "#6e6e6e",
-        inactive_bg: "#141414",
-    },
-    Theme {
-        id: "light-modern",
-        name: "Light Modern (VS Code)",
-        dark: false,
-        ghostty: "Light Modern",
-        zellij: "vkterm-light-modern",
-        inactive_fg: "#8b8b8b",
-        inactive_bg: "#ececec",
-    },
-    Theme {
-        id: "dracula",
-        name: "Dracula",
-        dark: true,
-        ghostty: "Dracula",
-        zellij: "dracula",
-        inactive_fg: "#6272a4",
-        inactive_bg: "#1e1f29",
-    },
-    Theme {
-        id: "nord",
-        name: "Nord",
-        dark: true,
-        ghostty: "Nord",
-        zellij: "nord",
-        inactive_fg: "#616e88",
-        inactive_bg: "#242933",
-    },
-    Theme {
-        id: "tokyo-night",
-        name: "Tokyo Night",
-        dark: true,
-        ghostty: "TokyoNight",
-        zellij: "tokyo-night",
-        inactive_fg: "#565f89",
-        inactive_bg: "#13141c",
-    },
-    Theme {
-        id: "gruvbox-dark",
-        name: "Gruvbox Dark",
-        dark: true,
-        ghostty: "Gruvbox Dark",
-        zellij: "gruvbox-dark",
-        inactive_fg: "#7c6f64",
-        inactive_bg: "#1d2021",
-    },
-    Theme {
-        id: "gruvbox-light",
-        name: "Gruvbox Light",
-        dark: false,
-        ghostty: "Gruvbox Light",
-        zellij: "gruvbox-light",
-        inactive_fg: "#a89984",
-        inactive_bg: "#ebdbb2",
-    },
-];
+pub struct Theme {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub kind: Kind,
+    /// Atenuar los paneles sin foco (no en los de alto contraste).
+    pub dim: bool,
+    /// Color del texto y del fondo de los paneles sin foco.
+    pub inactive_fg: &'static str,
+    pub inactive_bg: &'static str,
+    /// Colores de git (gitDecoration.*ResourceForeground), en el orden de
+    /// GIT_COLORS en scripts/gen-themes.py: ver `git_colors`.
+    pub git: [&'static str; 7],
+}
+
+/// Los colores de git del tema: los de los archivos en la vista Control de
+/// código fuente y en el explorador.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GitColors {
+    pub modified: Rgb,
+    pub added: Rgb,
+    pub deleted: Rgb,
+    pub renamed: Rgb,
+    pub untracked: Rgb,
+    pub ignored: Rgb,
+    pub conflicting: Rgb,
+}
+
+impl Theme {
+    /// Nombre del tema en Ghostty, Zellij y Micro.
+    pub fn file(&self) -> String {
+        format!("vkterm-{}", self.id)
+    }
+
+    pub fn git_colors(&self) -> GitColors {
+        let [modified, added, deleted, renamed, untracked, ignored, conflicting] =
+            self.git.map(|hex| Rgb::parse(hex).unwrap_or_default());
+        GitColors { modified, added, deleted, renamed, untracked, ignored, conflicting }
+    }
+}
 
 /// El tema con ese id; si no existe (o está vacío), el predeterminado.
 pub fn find(id: &str) -> &'static Theme {
+    &THEMES[index(id)]
+}
+
+/// Posición en THEMES del tema con ese id (o del predeterminado).
+pub fn index(id: &str) -> usize {
     let id = id.trim();
     THEMES
         .iter()
-        .find(|t| t.id == id)
-        .or_else(|| THEMES.iter().find(|t| t.id == DEFAULT))
+        .position(|t| t.id == id)
+        .or_else(|| THEMES.iter().position(|t| t.id == DEFAULT))
         .expect("el tema predeterminado existe")
+}
+
+/// Los temas en el orden del selector: por grupo y, dentro de cada uno, por
+/// nombre, como VS Code.
+pub fn picker_order() -> Vec<usize> {
+    let mut order: Vec<usize> = (0..THEMES.len()).collect();
+    order.sort_by_key(|&i| {
+        let theme = &THEMES[i];
+        let group = GROUPS.iter().position(|g| *g == theme.kind.group()).unwrap_or(GROUPS.len());
+        (group, theme.name.to_lowercase())
+    });
+    order
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashSet;
+    use std::path::Path;
 
     fn is_hex(color: &str) -> bool {
         color.len() == 7 && color.starts_with('#') && color[1..].chars().all(|c| c.is_ascii_hexdigit())
@@ -141,7 +122,7 @@ mod tests {
         assert_eq!(ids.len(), THEMES.len());
         for theme in THEMES {
             assert!(is_hex(theme.inactive_fg) && is_hex(theme.inactive_bg), "{}", theme.id);
-            assert!(!theme.ghostty.is_empty() && !theme.zellij.is_empty());
+            assert!(theme.git.iter().all(|c| is_hex(c)), "{}: colores de git", theme.id);
         }
     }
 
@@ -150,12 +131,40 @@ mod tests {
         assert_eq!(find("").id, DEFAULT);
         assert_eq!(find("no-existe").id, DEFAULT);
         assert_eq!(find(" dracula\n").id, "dracula");
-        assert_eq!(find(DEFAULT).ghostty, "Catppuccin Mocha");
+        assert_eq!(DEFAULT, "catppuccin-mocha");
+        assert_eq!(THEMES[0].id, DEFAULT);
     }
 
     #[test]
-    fn micro_usa_el_esquema_claro_en_los_temas_claros() {
-        assert_eq!(find("catppuccin-latte").micro(), "vkterm-light");
-        assert_eq!(find("dark-modern").micro(), "vkterm");
+    fn cada_tema_tiene_sus_archivos_generados() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let zellij = std::fs::read_to_string(root.join("config/zellij/themes/vkterm.kdl")).unwrap();
+        for theme in THEMES {
+            let name = theme.file();
+            assert!(root.join("config/ghostty/themes").join(&name).is_file(), "{name}");
+            assert!(root.join(format!("config/micro/colorschemes/{name}.micro")).is_file(), "{name}");
+            assert!(zellij.contains(&format!("    {name} {{")), "{name}");
+        }
+    }
+
+    #[test]
+    fn el_selector_agrupa_como_vs_code() {
+        let order = picker_order();
+        assert_eq!(order.len(), THEMES.len());
+        let groups: Vec<&str> = order.iter().map(|&i| THEMES[i].kind.group()).collect();
+        let mut sorted = groups.clone();
+        sorted.sort_by_key(|g| GROUPS.iter().position(|x| x == g));
+        assert_eq!(groups, sorted);
+        assert_eq!(THEMES[order[0]].kind, Kind::Light);
+        assert!(THEMES[*order.last().unwrap()].kind == Kind::HighContrastDark
+            || THEMES[*order.last().unwrap()].kind == Kind::HighContrastLight);
+    }
+
+    #[test]
+    fn los_de_alto_contraste_no_se_atenuan() {
+        for theme in THEMES {
+            let high_contrast = matches!(theme.kind, Kind::HighContrastDark | Kind::HighContrastLight);
+            assert_eq!(theme.dim, !high_contrast, "{}", theme.id);
+        }
     }
 }

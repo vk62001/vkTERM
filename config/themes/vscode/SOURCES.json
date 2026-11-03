@@ -1,0 +1,137 @@
+{
+  "microsoft/abyss-color-theme.json": {
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/1.143.1/extensions/theme-abyss/themes/abyss-color-theme.json",
+    "license": "MIT",
+    "sha256": "5ccb5fa5c6f66b43295f68852b7cc88b1ba35eb44a3a17c813e9094aaca755c4"
+  },
+  "microsoft/dark_modern.json": {
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/1.143.1/extensions/theme-defaults/themes/dark_modern.json",
+    "license": "MIT",
+    "sha256": "58d4ea55a2a36f65c0d5caf033dfddc4ec7d4b3a5d8b731a84bc36001d26a339"
+  },
+  "microsoft/dark_plus.json": {
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/1.143.1/extensions/theme-defaults/themes/dark_plus.json",
+    "license": "MIT",
+    "sha256": "409f33088a5cfd6589384900ef80627787c568d367c25b12f31bc7940936e573"
+  },
+  "microsoft/dark_vs.json": {
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/1.143.1/extensions/theme-defaults/themes/dark_vs.json",
+    "license": "MIT",
+    "sha256": "9fc2c16761400632eac6166ff7bb0435c5190a94bffa51ec1ef19b2ce78576b2"
+  },
+  "microsoft/hc_black.json": {
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/1.143.1/extensions/theme-defaults/themes/hc_black.json",
+    "license": "MIT",
+    "sha256": "07f6250833d40ca9ed7399f328816d4e0c59ddc21c64c8af754a6b260725b0ad"
+  },
+  "microsoft/hc_light.json": {
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/1.143.1/extensions/theme-defaults/themes/hc_light.json",
+    "license": "MIT",
+    "sha256": "1cc2ccb7d2fb7990d22baa1dd2bb7174817ac45ddc8b46c4d29c3ddb864b4ce2"
+  },
+  "microsoft/light_modern.json": {
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/1.143.1/extensions/theme-defaults/themes/light_modern.json",
+    "license": "MIT",
+    "sha256": "831b47d624e9acd6f09da58a699889415be7e45fccffb01177bc718b20e7e25c"
+  },
+  "microsoft/light_plus.json": {
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/1.143.1/extensions/theme-defaults/themes/light_plus.json",
+    "license": "MIT",
+    "sha256": "26fbb053bec8ce2b65706d5fcb993da8c19174cfdbf35a49b465236b5ed26203"
+  },
+  "microsoft/light_vs.json": {
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/1.143.1/extensions/theme-defaults/themes/light_vs.json",
+    "license": "MIT",
+    "sha256": "ce562a2ebec8c9a91021afb9ba7c9e8bcf4176df634fec8b77c748b42e3ce748"
+  },
+  "microsoft/kimbie-dark-color-theme.json": {
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/1.143.1/extensions/theme-kimbie-dark/themes/kimbie-dark-color-theme.json",
+    "license": "MIT",
+    "sha256": "a0b17410a795d8e03c86b24ce8d59570079a5fc4df5a2f7fd2daf9f9d81ab14d"
+  },
+  "microsoft/monokai-color-theme.json": {
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/1.143.1/extensions/theme-monokai/themes/monokai-color-theme.json",
+    "license": "MIT",
+    "sha256": "5681bcdc2e8f2994a41233bfdd1b02c2cfd90da5c6a4f5ebd4c8f42ef90d1b5f"
+  },
+  "microsoft/quietlight-color-theme.json": {
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/1.143.1/extensions/theme-quietlight/themes/quietlight-color-theme.json",
+    "license": "MIT",
+    "sha256": "1f54cc040234b040bcc701dfa7543880821415c05d13780300914ae814aad3df"
+  },
+  "microsoft/solarized-dark-color-theme.json": {
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/1.143.1/extensions/theme-solarized-dark/themes/solarized-dark-color-theme.json",
+    "license": "MIT",
+    "sha256": "920e68b8a62e3e6581cee8d7900af1772865e5fe2b9efe5904baa4a8a89bc445"
+  },
+  "microsoft/solarized-light-color-theme.json": {
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/1.143.1/extensions/theme-solarized-light/themes/solarized-light-color-theme.json",
+    "license": "MIT",
+    "sha256": "7c10e85f312c79dfccfa97fe97bb74c3d716a35f55e9701b30bc57e725ce1b44"
+  },
+  "microsoft/tomorrow-night-blue-color-theme.json": {
+    "url": "https://raw.githubusercontent.com/microsoft/vscode/1.143.1/extensions/theme-tomorrow-night-blue/themes/tomorrow-night-blue-color-theme.json",
+    "license": "MIT",
+    "sha256": "96d5889d05382b3b5b2d9300879ccbd00d29c42b05249f924b468d8f671ed218"
+  },
+  "catppuccin/mocha.json": {
+    "url": "https://open-vsx.org/api/Catppuccin/catppuccin-vsc/3.19.0/file/Catppuccin.catppuccin-vsc-3.19.0.vsix",
+    "member": "extension/themes/mocha.json",
+    "license": "MIT",
+    "sha256": "ae9a2cd5944a185e5f45c8ff1408342b3ae5ebc317c8238db6fe5fb0402e3e48"
+  },
+  "catppuccin/latte.json": {
+    "url": "https://open-vsx.org/api/Catppuccin/catppuccin-vsc/3.19.0/file/Catppuccin.catppuccin-vsc-3.19.0.vsix",
+    "member": "extension/themes/latte.json",
+    "license": "MIT",
+    "sha256": "f819183a518e525fb7375d5a84b3c4a2e3b6074ebdd75c973c03944a92679c68"
+  },
+  "dracula/dracula.json": {
+    "url": "https://open-vsx.org/api/dracula-theme/theme-dracula/2.25.1/file/dracula-theme.theme-dracula-2.25.1.vsix",
+    "member": "extension/theme/dracula.json",
+    "license": "MIT",
+    "sha256": "ae473d11bdef6ad5d3fc3c6cf3a104e98c9fd8a195f13c5cc1699df33a2537eb"
+  },
+  "nord/nord-color-theme.json": {
+    "url": "https://open-vsx.org/api/arcticicestudio/nord-visual-studio-code/0.19.0/file/arcticicestudio.nord-visual-studio-code-0.19.0.vsix",
+    "member": "extension/themes/nord-color-theme.json",
+    "license": "MIT",
+    "sha256": "7e307e98bc3a90785a2630bdb8c2c94352e22f744c6629cdbf3e82329e04a236"
+  },
+  "tokyo-night/tokyo-night-color-theme.json": {
+    "url": "https://open-vsx.org/api/enkia/tokyo-night/1.1.2/file/enkia.tokyo-night-1.1.2.vsix",
+    "member": "extension/themes/tokyo-night-color-theme.json",
+    "license": "MIT",
+    "sha256": "e08d77c898ead9ed129dc18ff4f841e2353477e69ccd6fa7d0610561c31da4d8"
+  },
+  "gruvbox/gruvbox-dark-medium.json": {
+    "url": "https://open-vsx.org/api/jdinhlife/gruvbox/1.29.1/file/jdinhlife.gruvbox-1.29.1.vsix",
+    "member": "extension/themes/gruvbox-dark-medium.json",
+    "license": "MIT",
+    "sha256": "b6dc507a94d9d63b8e9cf4dd7f04ea9b3fb5d667b96bd4d6750cd466e5891a87"
+  },
+  "gruvbox/gruvbox-light-medium.json": {
+    "url": "https://open-vsx.org/api/jdinhlife/gruvbox/1.29.1/file/jdinhlife.gruvbox-1.29.1.vsix",
+    "member": "extension/themes/gruvbox-light-medium.json",
+    "license": "MIT",
+    "sha256": "ba12d790f89a47ddac83ce3fbe027ee6cbf366d560290d9dd971b156f4efc20a"
+  },
+  "synthwave84/synthwave-color-theme.json": {
+    "url": "https://open-vsx.org/api/RobbOwen/synthwave-vscode/0.1.20/file/RobbOwen.synthwave-vscode-0.1.20.vsix",
+    "member": "extension/themes/synthwave-color-theme.json",
+    "license": "MIT",
+    "sha256": "cc2361fa174b34f5c8b17ecc6b7a3d64040677c50936bff2f955000ae84e999b"
+  },
+  "shades-of-purple/shades-of-purple-color-theme.json": {
+    "url": "https://open-vsx.org/api/ahmadawais/shades-of-purple/7.3.6/file/ahmadawais.shades-of-purple-7.3.6.vsix",
+    "member": "extension/themes/shades-of-purple-color-theme.json",
+    "license": "MIT",
+    "sha256": "5db19e01c34362177809c351f9c8db9985a80d7ec28d941b9dec617e5bbffb78"
+  },
+  "cobalt2/cobalt2.json": {
+    "url": "https://open-vsx.org/api/wesbos/theme-cobalt2/2.4.3/file/wesbos.theme-cobalt2-2.4.3.vsix",
+    "member": "extension/theme/cobalt2.json",
+    "license": "MIT",
+    "sha256": "6c50a853863649468a1a0c1d1c51e6e37c5002e0915070ca606be9f171defeb6"
+  }
+}

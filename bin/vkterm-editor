@@ -1,20 +1,54 @@
 #!/bin/zsh
 # vkTERM — proceso del panel Editor (lo lanza el layout, no se usa a mano).
 #
-# La primera vez en cada sesión abre en Micro el archivo inicial del proyecto,
-# VKTERM_OPEN_FILE, que fija bin/vkterm. Si Micro se cierra (⌘W en la última
-# pestaña), el plugin vkterm vuelve a lanzar este script y Micro arranca vacío,
-# como el editor de VS Code sin pestañas. La marca usa el PID del servidor de
-# Zellij ($PPID), así que una sesión nueva con el mismo nombre vuelve a abrir
-# el archivo inicial.
+#   vkterm-editor [ARCHIVO]
+#
+# La primera vez en cada sesión abre en Micro las pestañas que la carpeta
+# tenía la última vez (bin/vkterm-state, archivo editor) que aún existen, con
+# la misma pestaña activa, y además VKTERM_OPEN_FILE, que fija bin/vkterm
+# (`vkterm . ARCHIVO`, o la línea open= de .vkterm si la carpeta no tiene
+# memoria), que queda activo. Si Micro se cierra (⌘W en la última pestaña), el
+# plugin vkterm vuelve a lanzar este script y Micro arranca vacío, como el
+# editor de VS Code sin pestañas. bin/vkterm-open lo lanza con ARCHIVO si
+# Micro terminó con error. La marca usa el PID del servidor de Zellij ($PPID),
+# así que una sesión nueva con el mismo nombre vuelve a abrir las pestañas.
+#
+# VKTERM_EDITOR_PANE activa el plugin Lua de memoria (config/micro/plugins/
+# vkterm) solo en este Micro.
 #
 # El esquema de colores sale del tema elegido (bin/vkterm-theme, ⌘K ⌘T).
+emulate -L zsh
+setopt no_unset
+
+export VKTERM_EDITOR_PANE=1
 colorscheme=$(vkterm-theme value micro)
 micro_flags=()
 [[ -n $colorscheme ]] && micro_flags=(-colorscheme $colorscheme)
+(( $# )) && exec micro $micro_flags "$@"
+
 marker=${TMPDIR:-/tmp}/vkterm-editor-${ZELLIJ_SESSION_NAME:-none}-$PPID
-if [[ -n ${VKTERM_OPEN_FILE:-} && ! -e $marker ]]; then
-  : > $marker
-  exec micro $micro_flags "$VKTERM_OPEN_FILE"
+[[ -e $marker ]] && exec micro $micro_flags
+: > $marker
+
+# Micro nombra las pestañas con la ruta tal como se abrió: relativa al
+# proyecto, como las abre bin/vkterm-open.
+project=${VKTERM_PROJECT:-$PWD}
+relative() {
+  [[ $1 == $project/* ]] && print -r -- ${1#$project/} || print -r -- $1
+}
+files=() active=
+memory=${VKTERM_PROJECT_STATE:-}/editor
+if [[ -n ${VKTERM_PROJECT_STATE:-} && -f $memory ]]; then
+  while IFS= read -r line; do
+    case $line in
+      tab=*) [[ -f ${line#tab=} ]] && files+=("$(relative ${line#tab=})") ;;
+      active=*) active=$(relative ${line#active=}) ;;
+    esac
+  done < $memory
 fi
-exec micro $micro_flags
+if [[ -n ${VKTERM_OPEN_FILE:-} ]]; then
+  active=$(relative ${VKTERM_OPEN_FILE:A})
+  (( ${files[(Ie)$active]} )) || files+=("$active")
+fi
+(( ${files[(Ie)$active]} )) && export VKTERM_ACTIVE_TAB=${files[(Ie)$active]}
+exec micro $micro_flags "${files[@]}"

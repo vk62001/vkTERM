@@ -11,5 +11,8 @@
 /plugins/**/target/
 *.wasm
 
+# DMG de scripts/build-dmg.sh
+/dist/
+
 __pycache__/
 .DS_Store

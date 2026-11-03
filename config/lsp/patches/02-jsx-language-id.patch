@@ -1,0 +1,29 @@
+diff --git a/main.lua b/main.lua
+index 930370f..9286af0 100644
+--- a/main.lua
++++ b/main.lua
+@@ -572,6 +572,15 @@ function LSPClient:receiveMessage(text)
+     end
+ end
+ 
++-- vkTERM: Micro llama "typescript" a los .tsx y "javascript" a los .jsx, y el
++-- servidor de TypeScript no entendería el JSX: se anuncian como en VS Code.
++function languageId(buf)
++    local extension = buf.AbsPath:match("%.(%w+)$")
++    if extension == "tsx" then return "typescriptreact" end
++    if extension == "jsx" then return "javascriptreact" end
++    return buf:FileType()
++end
++
+ function LSPClient:didOpen(buf)
+     local textDocument = textDocumentIdentifier(buf)
+     local filePath = buf.AbsPath
+@@ -596,7 +605,7 @@ function LSPClient:didOpen(buf)
+         version = 1,
+         diagnostics = {}
+     }
+-    textDocument.languageId = filetype
++    textDocument.languageId = languageId(buf)
+     textDocument.version = 1
+     textDocument.text = bufText
+ 

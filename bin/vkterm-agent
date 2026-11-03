@@ -1,0 +1,287 @@
+#!/usr/bin/env -S python3 -I
+# vkTERM — ⌘V con una imagen en Claude Code y Codex del modo terminal.
+#
+#   vkterm-agent ORDEN [ARGUMENTOS…]
+#
+# La integración de zsh (config/zsh/vkterm.zsh) ejecuta así `claude` y `codex`
+# en las pestañas en modo terminal. Los dos adjuntan la imagen del
+# portapapeles con ⌃V, leyéndola ellos mismos; ⌘V en un terminal solo puede
+# pegar texto. En el IDE, el plugin vkterm les manda ⌃V (src/clipboard.rs);
+# aquí no hay Zellij en medio y este programa hace de intermediario: corre la
+# orden en un pseudoterminal propio y le pasa todo tal cual, salvo ⌘V cuando
+# no había texto que pegar, que se convierte en ⌃V.
+#
+# Cómo se sabe que no había texto: el ⌘V del modo terminal es `performable:`
+# (config/ghostty/vkterm.ghostty). Si el portapapeles no tiene texto, Ghostty
+# no pega nada y envía la tecla al programa; los dos agentes activan el
+# protocolo de teclado de kitty, así que llega como Super+V (ESC [118;9u).
+#
+# Sin terminal (una tubería, `claude -p` en un script) ejecuta la orden
+# directamente. `command claude` se salta este intermediario.
+import errno
+import fcntl
+import os
+import re
+import select
+import signal
+import sys
+import termios
+import time
+import tty
+
+# Super+V en el protocolo de kitty: tecla 118 (v), con códigos alternativos
+# opcionales; modificadores 9 (1 + Super), con el tipo de evento opcional
+# (1 pulsar, 2 repetir, 3 soltar), y el texto asociado, también opcional.
+SUPER_V = re.compile(rb"\x1b\[118(?::[0-9]*)*;9(?::([123]))?(?:;[0-9:]*)?u")
+CTRL_V = b"\x16"
+# Cuánto se espera al resto de una secuencia partida en dos lecturas.
+HOLD = 0.04
+# Lo que puede ser el principio de SUPER_V si llega partido en dos lecturas.
+PARTIAL = re.compile(rb"\x1b(?:\[(?:1(?:1(?:8(?:[:0-9]*(?:;(?:9(?::[123]?)?)?)?)?)?)?)?)?\Z")
+
+
+def translate(data):
+    """Super+V → ⌃V (solo al pulsar). Devuelve (lo que se envía, lo pendiente)."""
+    data = SUPER_V.sub(lambda m: b"" if m.group(1) in (b"2", b"3") else CTRL_V, data)
+    partial = PARTIAL.search(data)
+    if partial:
+        return data[:partial.start()], data[partial.start():]
+    return data, b""
+
+
+def copy_size(source, target):
+    try:
+        fcntl.ioctl(target, termios.TIOCSWINSZ, fcntl.ioctl(source, termios.TIOCGWINSZ, b"\0" * 8))
+    except OSError:
+        pass
+
+
+def exit_code(code):
+    return os.WEXITSTATUS(code) if os.WIFEXITED(code) else 128 + os.WTERMSIG(code)
+
+
+# Señales que Python ignora o atiende por su cuenta: la orden las recibe con
+# su efecto normal.
+DEFAULTS = (signal.SIGPIPE, signal.SIGXFSZ, signal.SIGINT, signal.SIGQUIT, signal.SIGTERM,
+            signal.SIGHUP, signal.SIGTSTP, signal.SIGTTIN, signal.SIGTTOU)
+
+
+def spawn(argv):
+    """Pseudoterminal nuevo con su sesión, como en una pestaña: un proceso
+    líder (el «vigilante», que también es este programa) y la orden en su
+    propio grupo de procesos, en primer plano. Así ⌃Z la detiene (en un grupo
+    huérfano, macOS descartaría SIGTSTP) y el vigilante lo hace saber
+    deteniéndose él también."""
+    master, slave = os.openpty()
+    try:
+        termios.tcsetattr(slave, termios.TCSANOW, termios.tcgetattr(0))
+    except termios.error:
+        pass
+    copy_size(0, slave)
+    pid = os.fork()
+    if pid:
+        os.close(slave)
+        return pid, master
+    os.close(master)
+    os.setsid()
+    fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
+    for fd in (0, 1, 2):
+        os.dup2(slave, fd)
+    if slave > 2:
+        os.close(slave)
+    child = os.fork()
+    if child == 0:
+        os.setpgid(0, 0)
+        signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+        os.tcsetpgrp(0, os.getpid())
+        for sig in DEFAULTS:
+            signal.signal(sig, signal.SIG_DFL)
+        try:
+            os.execvp(argv[0], argv)
+        except OSError as error:
+            os.write(2, ("vkterm-agent: %s: %s\r\n" % (argv[0], error.strerror)).encode())
+        os._exit(127)
+    watch(child)
+
+
+def watch(child):
+    """El vigilante: reenvía las señales a la orden, se detiene cuando ella se
+    detiene y, al reanudarlo, la vuelve a poner en primer plano."""
+    try:
+        os.setpgid(child, child)
+    except OSError:
+        pass
+    signal.signal(signal.SIGTTOU, signal.SIG_IGN)
+    signal.signal(signal.SIGTTIN, signal.SIG_IGN)
+
+    def forward(sig, _):
+        try:
+            os.killpg(child, sig)
+        except ProcessLookupError:
+            pass
+    for sig in (signal.SIGHUP, signal.SIGTERM, signal.SIGINT, signal.SIGQUIT):
+        signal.signal(sig, forward)
+    while True:
+        try:
+            _, code = os.waitpid(child, os.WUNTRACED)
+        except ChildProcessError:
+            os._exit(1)
+        if os.WIFSTOPPED(code):
+            os.kill(os.getpid(), signal.SIGSTOP)
+            try:
+                os.tcsetpgrp(0, child)
+            except OSError:
+                pass
+            os.killpg(child, signal.SIGCONT)
+        else:
+            os._exit(exit_code(code))
+
+
+def write_all(fd, data):
+    while data:
+        try:
+            data = data[os.write(fd, data):]
+        except InterruptedError:
+            pass
+
+
+def main(argv):
+    if not argv:
+        print("uso: vkterm-agent ORDEN [ARGUMENTOS…]", file=sys.stderr)
+        return 2
+    if not (os.isatty(0) and os.isatty(1)):
+        for sig in DEFAULTS:
+            signal.signal(sig, signal.SIG_DFL)
+        try:
+            os.execvp(argv[0], argv)
+        except OSError as error:
+            print("vkterm-agent: %s: %s" % (argv[0], error.strerror), file=sys.stderr)
+            return 127
+    pid, master = spawn(argv)
+    os.set_blocking(master, False)
+    saved = termios.tcgetattr(0)
+    status = None
+    pending, since = b"", 0.0  # el principio de un Super+V y desde cuándo espera
+    to_child = b""             # lo que la orden todavía no ha leído
+    # Las señales solo despiertan el bucle (set_wakeup_fd); se atienden en él.
+    wake_r, wake_w = os.pipe()
+    os.set_blocking(wake_w, False)
+    signal.set_wakeup_fd(wake_w)
+    for sig in (signal.SIGWINCH, signal.SIGCHLD, signal.SIGCONT,
+                signal.SIGHUP, signal.SIGTERM, signal.SIGINT, signal.SIGQUIT):
+        signal.signal(sig, lambda *_: None)
+
+    def forward(sig):
+        try:
+            os.kill(pid, sig)
+        except ProcessLookupError:
+            pass
+
+    def resume():
+        tty.setraw(0)
+        copy_size(0, master)
+        forward(signal.SIGCONT)
+
+    def reap():
+        """True si la orden terminó. Si se detuvo (⌃Z), se detiene también este
+        intermediario y, al volver (fg), la reanuda."""
+        nonlocal status
+        try:
+            done, code = os.waitpid(pid, os.WNOHANG | os.WUNTRACED)
+        except ChildProcessError:
+            return True
+        if done == 0:
+            return False
+        if os.WIFSTOPPED(code):
+            # SIGSTOP y no SIGTSTP: en un grupo huérfano (sin shell que lo
+            # controle) macOS descartaría SIGTSTP.
+            termios.tcsetattr(0, termios.TCSADRAIN, saved)
+            os.kill(os.getpid(), signal.SIGSTOP)
+            resume()
+            return False
+        status = exit_code(code)
+        return True
+
+    tty.setraw(0)
+    try:
+        while True:
+            # Sin leer más teclas mientras la orden no recoge las anteriores.
+            readers = [master, wake_r] + ([] if to_child else [0])
+            writers = [master] if to_child else []
+            wait = max(0.0, since + HOLD - time.monotonic()) if pending else None
+            try:
+                readable, _, _ = select.select(readers, writers, [], wait)
+            except InterruptedError:
+                continue
+            if wake_r in readable:
+                for sig in os.read(wake_r, 64):
+                    if sig == signal.SIGWINCH:
+                        copy_size(0, master)
+                    elif sig == signal.SIGCONT:
+                        resume()
+                    elif sig != signal.SIGCHLD:
+                        forward(sig)
+                if reap():
+                    break
+            if master in readable:
+                try:
+                    data = os.read(master, 65536)
+                except BlockingIOError:
+                    data = None
+                except OSError as error:
+                    # macOS: EIO cuando ya nadie tiene abierto el otro lado.
+                    if error.errno != errno.EIO:
+                        raise
+                    data = b""
+                if data == b"":
+                    break
+                if data:
+                    write_all(1, data)
+            if 0 in readable:
+                try:
+                    data = os.read(0, 65536)
+                except OSError:
+                    data = b""
+                if not data:
+                    # Se cerró el terminal.
+                    forward(signal.SIGHUP)
+                    break
+                if not pending:
+                    since = time.monotonic()
+                sent, pending = translate(pending + data)
+                to_child += sent
+            if pending and time.monotonic() - since >= HOLD:
+                # No era un Super+V: se envía tal cual.
+                to_child += pending
+                pending = b""
+            if to_child:
+                try:
+                    to_child = to_child[os.write(master, to_child):]
+                except BlockingIOError:
+                    pass
+                except OSError as error:
+                    if error.errno != errno.EIO:
+                        raise
+                    to_child = b""
+        # Lo último que escribió la orden.
+        while select.select([master], [], [], 0.05)[0]:
+            try:
+                data = os.read(master, 65536)
+            except OSError:
+                break
+            if not data:
+                break
+            write_all(1, data)
+    finally:
+        termios.tcsetattr(0, termios.TCSADRAIN, saved)
+    if status is None:
+        # Cerró su terminal pero sigue en marcha, o se le mandó SIGHUP: hasta 2 s.
+        for _ in range(40):
+            if reap():
+                break
+            time.sleep(0.05)
+    return 129 if status is None else status
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,11 @@
+{
+  "name": "vkterm-lsp",
+  "private": true,
+  "description": "Servidores de lenguaje de vkTERM (bin/vkterm-plugins install). Versiones exactas; package-lock.json fija sus dependencias.",
+  "license": "GPL-3.0-or-later",
+  "dependencies": {
+    "pyright": "1.1.414",
+    "typescript": "6.0.3",
+    "typescript-language-server": "6.0.2"
+  }
+}

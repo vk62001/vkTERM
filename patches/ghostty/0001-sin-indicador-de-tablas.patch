@@ -1,0 +1,18 @@
+diff --git a/macos/Sources/Ghostty/Surface View/SurfaceView.swift b/macos/Sources/Ghostty/Surface View/SurfaceView.swift
+index 47503dc..ecf8655 100644
+--- a/macos/Sources/Ghostty/Surface View/SurfaceView.swift	
++++ b/macos/Sources/Ghostty/Surface View/SurfaceView.swift	
+@@ -128,9 +128,11 @@ extension Ghostty {
+                     }
+                 }
+ 
+-                // Show key state indicator for active key tables and/or pending key sequences
++                // Show key state indicator for pending key sequences. vkTERM:
++                // not for active key tables (the IDE mode is always one; its
++                // status bar shows it instead).
+                 KeyStateIndicator(
+-                    keyTables: surfaceView.keyTables,
++                    keyTables: [],
+                     keySequence: surfaceView.keySequence
+                 )
+ #endif

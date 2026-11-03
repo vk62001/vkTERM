@@ -1,0 +1,24 @@
+#!/bin/zsh
+# vkTERM — ejecuta un comando en el Micro del panel Editor de esta sesión.
+#
+#   vkterm-micro COMANDO      p. ej. vkterm-micro "set colorscheme vkterm-light"
+#
+# Micro no tiene una API externa: se le escribe su línea de comandos con
+# `zellij action` (Esc cierra cualquier diálogo abierto, Ctrl-E abre la línea
+# de comandos, el texto y Enter). Lo usan bin/vkterm-theme y bin/vkterm-state;
+# bin/vkterm-open hace lo mismo con el panel que ya ha localizado. Sale con 1
+# si no hay un Micro vivo en el panel Editor.
+emulate -L zsh
+setopt no_unset pipe_fail
+
+(( $# == 1 )) || { print -u2 "uso: vkterm-micro COMANDO"; exit 2; }
+[[ -n ${ZELLIJ_SESSION_NAME:-} ]] || exit 1
+editor=$(zellij action list-panes -a -j 2>/dev/null | jq -r '
+  first(.[] | select(.title == "Editor" and (.is_plugin | not) and (.exited | not))) | .id')
+[[ -n $editor && $editor != null ]] || exit 1
+id=terminal_$editor
+zellij action write -p $id 27   # Esc
+sleep 0.1                       # Esc seguido de Ctrl-E se leería como Alt-Ctrl-E
+zellij action write -p $id 5    # Ctrl-E: línea de comandos de Micro
+zellij action write-chars -p $id "$1"
+zellij action write -p $id 13

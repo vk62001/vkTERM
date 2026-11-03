@@ -49,10 +49,12 @@ if [[ $file == $cwd/* ]]; then
 fi
 
 # Si se cerró Micro (el panel muestra EXITED), se sustituye el panel por un
-# Micro nuevo con el archivo, en el mismo sitio y con el mismo nombre.
+# Micro nuevo con el archivo, en el mismo sitio y con el mismo nombre. Con
+# bin/vkterm-editor, el comando del layout: el plugin vkterm reconoce el panel
+# al recolocarlo y Micro sigue recordando sus pestañas.
 if [[ $fields[2] == true ]]; then
   new=$(zellij action new-pane --in-place --close-replaced-pane --pane-id $id \
-          --name Editor --cwd $cwd -- micro $name)
+          --name Editor --cwd $cwd -- vkterm-editor $name)
   focus ${new:-$id}
   exit 0
 fi

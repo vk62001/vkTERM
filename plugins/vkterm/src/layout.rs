@@ -45,7 +45,7 @@ pub fn kdl(v: Visible) -> String {
         out += "            pane name=\"Codex\" command=\"codex\" start_suspended=true\n";
         out += "        }\n";
     }
-    out += "    }\n    pane size=1 borderless=true { plugin location=\"compact-bar\"; }\n}\n";
+    out += "    }\n    pane size=1 borderless=true { plugin location=\"vkterm\" { mode \"status\"; }; }\n}\n";
     out
 }
 
@@ -87,7 +87,8 @@ mod tests {
     #[test]
     fn coincide_con_el_layout_de_arranque() {
         let base = include_str!("../../../config/zellij/layouts/vkterm.kdl");
-        for line in kdl(Visible::default()).lines().filter(|l| l.contains("name=")) {
+        let lines = kdl(Visible::default());
+        for line in lines.lines().filter(|l| l.contains("name=") || l.contains("mode")) {
             assert!(base.contains(line.trim()), "falta en vkterm.kdl: {}", line.trim());
         }
     }

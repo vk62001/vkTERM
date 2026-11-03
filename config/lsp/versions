@@ -1,0 +1,20 @@
+# vkTERM — versiones fijas de bin/vkterm-plugins (se leen con `source`).
+# Las de npm están en package.json y package-lock.json.
+
+# µlsp, plugin LSP de Micro (MIT). Se le aplican los parches de patches/.
+mlsp_repo=https://github.com/Andriamanitra/mlsp
+mlsp_commit=91261a0926c9e95d059cf5854a0c2e8d4e7d4051
+
+# typescript-language-server 6 pide node >= 22.22.2.
+node_minimum=22.22.2
+
+# ruff (Python: formato y avisos), binario oficial.
+ruff_version=0.16.10
+ruff_sha256_arm64=f051cd306de2691262a0574f8857cd1f4d6bfcd448084ea23d61b9c1c37df510
+ruff_sha256_x86_64=ace641df42926e962cf04bc52c79eb6c50ba1ae6a17b602f081960616ecc1bd1
+
+# Go (solo con `install go`): gopls lo necesita para compilar y analizar.
+go_version=1.27.3
+go_sha256_arm64=dd3908cf20959d798c1e06ebe5b72213f0505ce01373b40ce3110975a6cd99c2
+go_sha256_x86_64=b6f8e931e4ab497fcde6da8ae4499a58f9d258e55c8a80824a516eae5950a750
+gopls_version=v0.24.0

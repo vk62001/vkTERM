@@ -1,6 +1,9 @@
-//! Lo común a las ventanas flotantes del plugin (atajos y temas): se abren y
-//! se cierran con el mismo atajo, toman el foco, se centran en la zona de
-//! paneles con un marco propio y avisan cuando pierden el foco.
+//! Lo común a las ventanas flotantes del plugin (atajos, temas, fuentes,
+//! paleta y confirmación al cerrar la carpeta): se abren y se cierran con el
+//! mismo atajo, toman el foco, se centran en la zona de paneles con un marco
+//! propio, se pintan con los colores del tema (los de la paleta de VS Code,
+//! src/style.rs) y avisan cuando pierden el foco.
+use vkterm::style::{Line, Palette, Rgb, Slot, Slots};
 use zellij_tile::prelude::*;
 
 /// Marco propio, con el título arriba y la ayuda abajo. El de Zellij añade
@@ -10,6 +13,8 @@ pub const FRAME: usize = 1;
 #[derive(Default)]
 pub struct Floating {
     pub me: u32,
+    /// Colores del tema, de cada ModeUpdate.
+    pub palette: Palette,
     opened: bool,
     was_focused: bool,
     /// Pestaña en la que está la ventana.
@@ -26,7 +31,8 @@ impl Floating {
         // pedidos por el plugin y, si fueran menos, el explorador volvería a
         // preguntar en la siguiente sesión.
         request_permission(&crate::PERMISSIONS);
-        let mut events = vec![EventType::Key, EventType::Mouse, EventType::PaneUpdate, EventType::TabUpdate];
+        let mut events =
+            vec![EventType::Key, EventType::Mouse, EventType::PaneUpdate, EventType::TabUpdate, EventType::ModeUpdate];
         events.extend_from_slice(extra_events);
         subscribe(&events);
         self.me = get_plugin_ids().plugin_id;
@@ -47,6 +53,19 @@ impl Floating {
 
     pub fn area(&self) -> (usize, usize) {
         self.area
+    }
+
+    /// Sigue el tema: true si cambió (hay que volver a dibujar).
+    pub fn theme(&mut self, event: &Event) -> bool {
+        match event {
+            Event::ModeUpdate(mode) => {
+                let palette = palette(&mode.style);
+                let changed = palette != self.palette;
+                self.palette = palette;
+                changed
+            }
+            _ => false,
+        }
     }
 
     /// Sigue el foco y la zona de paneles; true si la ventana perdió el foco.
@@ -103,31 +122,118 @@ impl Floating {
     }
 }
 
-/// Marco redondeado con `title` centrado arriba y `hint` centrado abajo.
-pub fn frame(rows: usize, cols: usize, title: &str, hint: &str) {
+/// El explorador (controlador) de la sesión: el panel fijo del mismo plugin
+/// que se puede enfocar. La barra de estado también es este plugin, pero no
+/// se puede enfocar.
+pub fn controller(manifest: &PaneManifest, me: u32) -> Option<u32> {
+    let panes = manifest.panes.values().flatten();
+    let url = panes.clone().find(|p| p.is_plugin && p.id == me).and_then(|p| p.plugin_url.clone())?;
+    panes
+        .filter(|p| p.is_plugin && !p.is_floating && p.is_selectable && p.id != me)
+        .find(|p| p.plugin_url.as_ref() == Some(&url))
+        .map(|p| p.id)
+}
+
+/// Marco redondeado con `title` centrado arriba y `hint` centrado abajo (sin
+/// nada, si están vacíos), y el interior con el fondo de la paleta
+/// (quickInput.background). Se dibuja antes que el contenido.
+pub fn frame(rows: usize, cols: usize, title: &str, hint: &str, palette: &Palette) {
     if rows < 2 || cols < 2 {
         return;
     }
+    let edge = palette.quick.with_fg(palette.border);
     let border = |left: &str, label: &str, right: &str| {
-        let label = format!(" {label} ");
+        let label = if label.is_empty() { String::new() } else { format!(" {label} ") };
         let inner = cols - 2;
         let width = label.chars().count().min(inner);
         let before = (inner - width) / 2;
-        let line = format!(
+        let text = format!(
             "{left}{}{}{}{right}",
             "─".repeat(before),
             label.chars().take(width).collect::<String>(),
             "─".repeat(inner - width - before),
         );
-        (line, 1 + before..1 + before + width)
+        (Line::new(&text, cols, edge), 1 + before..1 + before + width)
     };
-    let (top, title) = border("╭", title, "╮");
-    let text = Text::new(&top).dim_range(..title.start).color_range(2, title.clone()).dim_range(title.end..);
-    print_text_with_coordinates(text, 0, 0, Some(cols), Some(1));
+    let (mut top, title) = border("╭", title, "╮");
+    top.paint(title, |_| palette.quick.bold());
+    print!("{}", top.render(0, 0));
+    let mut side = Line::new(&format!("│{}│", " ".repeat(cols - 2)), cols, palette.quick);
+    side.fg(0..1, palette.border);
+    side.fg(cols - 1..cols, palette.border);
     for y in 1..rows - 1 {
-        print_text_with_coordinates(Text::new("│").dim_all(), 0, y, None, None);
-        print_text_with_coordinates(Text::new("│").dim_all(), cols - 1, y, None, None);
+        print!("{}", side.render(0, y));
     }
-    let (bottom, _) = border("╰", hint, "╯");
-    print_text_with_coordinates(Text::new(&bottom).dim_all(), 0, rows - 1, Some(cols), Some(1));
+    let (mut bottom, hint) = border("╰", hint, "╯");
+    bottom.fg(hint, palette.quick_description);
+    print!("{}", bottom.render(0, rows - 1));
+}
+
+/// Una fila del interior de una ventana, sobre su fondo.
+pub fn row(text: &str, width: usize, palette: &Palette) -> Line {
+    Line::new(text, width, palette.quick)
+}
+
+/// La línea de lo escrito: `prompt`, el texto y el cursor; sin texto, la
+/// ayuda.
+pub fn input_line(prompt: &str, query: &str, placeholder: &str, width: usize, palette: &Palette) -> Line {
+    let text = if query.is_empty() { format!("{prompt} ▏{placeholder}") } else { format!("{prompt} {query}▏") };
+    let mut line = row(&text, width, palette);
+    line.fg(0..1, palette.accent);
+    if query.is_empty() {
+        line.fg(3..width, palette.quick_description);
+    }
+    line
+}
+
+/// Título de un grupo: el nombre y una raya hasta el final.
+pub fn group_line(title: &str, width: usize, palette: &Palette) -> Line {
+    let label = format!("{title} ");
+    let rule = "─".repeat(width.saturating_sub(label.chars().count()));
+    let mut line = row(&format!("{label}{rule}"), width, palette);
+    let len = label.chars().count();
+    line.fg(0..len, palette.group);
+    line.fg(len..width, palette.border);
+    line
+}
+
+/// La paleta de la interfaz a partir del tema de Zellij (config/zellij/themes).
+pub fn palette(style: &Style) -> Palette {
+    Palette::from_slots(&slots(&style.colors))
+}
+
+fn rgb(color: PaletteColor) -> Rgb {
+    match color {
+        PaletteColor::Rgb((r, g, b)) => Rgb(r, g, b),
+        PaletteColor::EightBit(n) => Rgb::from_ansi256(n),
+    }
+}
+
+fn slot(d: &StyleDeclaration) -> Slot {
+    // "background 0" en el tema: sin fondo propio.
+    let background = match d.background {
+        PaletteColor::EightBit(0) => None,
+        other => Some(rgb(other)),
+    };
+    Slot {
+        base: rgb(d.base),
+        background,
+        emphasis: [rgb(d.emphasis_0), rgb(d.emphasis_1), rgb(d.emphasis_2), rgb(d.emphasis_3)],
+    }
+}
+
+fn slots(s: &Styling) -> Slots {
+    Slots {
+        text_unselected: slot(&s.text_unselected),
+        text_selected: slot(&s.text_selected),
+        table_title: slot(&s.table_title),
+        table_cell_selected: slot(&s.table_cell_selected),
+        table_cell_unselected: slot(&s.table_cell_unselected),
+        list_unselected: slot(&s.list_unselected),
+        list_selected: slot(&s.list_selected),
+        ribbon_selected: slot(&s.ribbon_selected),
+        frame_selected: slot(&s.frame_selected),
+        frame_unselected: s.frame_unselected.as_ref().map(slot),
+        exit_code_error: slot(&s.exit_code_error),
+    }
 }

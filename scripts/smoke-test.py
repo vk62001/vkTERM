@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
-"""vkTERM — pruebas de humo (Fase 1: interfaz tipo VS Code).
+"""vkTERM — pruebas de humo.
 
-    scripts/smoke-test.py             configuración + workspace en un PTY
-    scripts/smoke-test.py --ghostty   además, Ghostty real con teclas sintetizadas
+    scripts/smoke-test.py             configuración + IDE en un PTY
+    scripts/smoke-test.py --ghostty   además, vkTERM Test.app con teclas sintetizadas
 
-Modo PTY: arranca bin/vkterm sobre una copia temporal de examples/demo en un
-pseudo-terminal de 200x50 y le envía exactamente los bytes que el perfil de
-Ghostty emite para cada atajo ⌘ (leídos de `ghostty +list-keybinds`). El
-estado se comprueba con `zellij action`, procesos y archivos en disco.
+Modo PTY: arranca `bin/vkterm --here` sobre una copia temporal de
+examples/demo en un pseudo-terminal de 200x50 y le envía exactamente los
+bytes que el perfil de Ghostty emite para cada atajo ⌘ del modo IDE (leídos
+de `ghostty +list-keybinds`). El estado se comprueba con `zellij action`,
+procesos y archivos en disco. También prueba la memoria de cada carpeta,
+⌘K F (cerrar la carpeta) con su confirmación, el fin de la sesión al cerrar
+la pestaña y la integración de zsh del modo terminal (con un HOME falso).
 
-Modo --ghostty: abre vkTERM en una ventana de Ghostty (sin robarle el foco a
-la app activa, salvo un instante para ⌃Tab / ⌃⇧Tab: AppKit solo los entrega
-a la ventana principal) y entrega eventos de teclado CGEvent al proceso de
-Ghostty con scripts/send-keys.swift. Recorren Ghostty → Zellij → aplicación,
-pero NO son pulsaciones físicas: la lista manual está en docs/manual-tests.md.
-Requiere permiso de Accesibilidad para el terminal que ejecuta la prueba.
+Modo --ghostty: crea si hace falta "vkTERM Test.app" (`bin/vkterm-app install
+--test`, otro identificador que la app de uso diario), la abre con un estado
+temporal y escribe `vkterm .` en una pestaña en modo terminal. Entrega
+eventos de teclado CGEvent a su proceso con scripts/send-keys.swift (sin
+robarle el foco a la app activa, salvo un instante para ⌃Tab / ⌃⇧Tab y los
+diálogos de Ghostty: AppKit solo los entrega a la ventana principal).
+Recorren Ghostty → Zellij → aplicación, pero NO son pulsaciones físicas: la
+lista manual está en docs/manual-tests.md. Requiere permiso de Accesibilidad
+para el terminal que ejecuta la prueba y, si el repositorio está en un disco
+externo, que vkTERM Test pueda leerlo (macOS lo pregunta la primera vez).
 
 Nunca ejecuta Claude Code ni Codex, no modifica el portapapeles y no toca las
 sesiones de Zellij que ya existían. Si Zellij pide permisos para el plugin
@@ -47,56 +54,94 @@ TITLES = ("Explorador", "Editor", "Shell", "Claude Code", "Codex")
 TERMINALS = ("Editor", "Shell", "Claude Code", "Codex")
 SHORTCUTS_TITLE = "Atajos de teclado"
 THEMES_TITLE = "Tema de color"
+FONTS_TITLE = "Fuente"
 FILES_TITLE = "Abrir archivo"
 COMMANDS_TITLE = "Paleta de comandos"
+NEWFILE_TITLE = "Nuevo archivo"
 # Caché de permisos de Zellij (solo se lee) y permisos que pide el plugin.
 PERMISSIONS_CACHE = Path.home() / "Library" / "Caches" / "org.Zellij-Contributors.Zellij" / "permissions.kdl"
 PLUGIN_PERMISSIONS = {"ReadApplicationState", "ChangeApplicationState", "WriteToStdin", "RunCommands",
                       "Reconfigure", "MessageAndLaunchOtherPlugins"}
-# Temas de plugins/vkterm/src/themes.rs (id, nombre y colores del atenuado).
-THEMES_RS = (ROOT / "plugins" / "vkterm" / "src" / "themes.rs").read_text()
-THEMES = [dict(zip(("id", "name", "inactive_fg", "inactive_bg"), found)) for found in re.findall(
-    r'id: "([^"]+)",\s*name: "([^"]+)",.*?inactive_fg: "([^"]+)",\s*inactive_bg: "([^"]+)"', THEMES_RS, re.S)]
-DEFAULT_THEME = next(t for t in THEMES
-                     if t["id"] == re.search(r'pub const DEFAULT: &str = "([^"]+)"', THEMES_RS).group(1))
+# Temas de ⌘K ⌘T (config/themes/generated.json, de scripts/gen-themes.py):
+# id, nombre, tipo, colores del atenuado, de la interfaz (ui) y de Micro.
+GENERATED = json.loads((ROOT / "config" / "themes" / "generated.json").read_text())
+THEMES = GENERATED["themes"]
+DEFAULT_THEME = next(t for t in THEMES if t["id"] == GENERATED["default"])
+# Orden del selector, como VS Code: claros, oscuros y alto contraste; por nombre.
+GROUP_ORDER = {"light": 0, "dark": 1, "hc-dark": 2, "hc-light": 2}
+PICKER_ORDER = sorted(THEMES, key=lambda t: (GROUP_ORDER[t["kind"]], t["name"].lower()))
 # Fondo de los paneles sin foco con el tema predeterminado.
 INACTIVE_BG = DEFAULT_THEME["inactive_bg"]
 
 ENTER, SPACE, ESC = b"\r", b" ", b"\x1b"
 UP, DOWN, RIGHT, LEFT, HOME = b"\x1b[A", b"\x1b[B", b"\x1b[C", b"\x1b[D", b"\x1b[H"
+# Los shells de la prueba (los del usuario, con su .zshrc) sin la pregunta de
+# oh-my-zsh por actualizarse, si toca: se comería la primera tecla de lo que
+# escribe la prueba. La prueba no la contesta por el usuario.
+OMZ_NO_UPDATE = "true"
 # Cabecera de un PNG: tiene bytes NUL, así que es binario.
 PNG = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
 
-# Atajo de macOS → acción esperada en el perfil de Ghostty.
-EXPECTED_KEYBINDS = {
+# Modo IDE: atajo de macOS → acción esperada en la tabla `vkterm` del perfil.
+EXPECTED_KEYBINDS = {"vkterm/" + trigger: action for trigger, action in {
     "super+digit_1": "esc:1", "super+digit_2": "esc:2", "super+digit_3": "esc:3",
     "super+digit_4": "esc:4", "super+digit_5": "esc:5",
     "super+1": "esc:1", "super+2": "esc:2", "super+3": "esc:3",
     "super+4": "esc:4", "super+5": "esc:5",
     "super+b": "esc:6", "super+j": "esc:7", "super+alt+b": "esc:8", "super+alt+key_b": "esc:8",
     "super+w": "esc:9", "super+p": "esc:0", "super+shift+p": "esc:;", "super+k>super+s": "esc:?",
+    "super+n": "esc:d",
     "super+k>z": "esc:z",
     "super+k>super+t": "esc:t",
+    "super+k>super+l": "esc:g",
+    "super++": "esc:m", "super+=": "esc:m", "super+-": "esc:w", "super+0": "esc:e",
+    "super+k>f": "esc:q", "super+o": "esc:b",
     "super+alt+arrow_left": "esc:,", "super+alt+arrow_right": "esc:.",
     "ctrl+shift+tab": "esc:,", "ctrl+tab": "esc:.",
     "super+alt+arrow_up": "esc:k", "super+alt+arrow_down": "esc:j",
     "super+s": "esc:OQ", "super+arrow_left": "csi:H", "super+arrow_right": "csi:F",
-    "super+c": "copy_to_clipboard:mixed|esc:c", "super+v": "paste_from_clipboard",
+    "super+c": "copy_to_clipboard:mixed|esc:c", "super+v": "paste_from_clipboard|esc:v",
     "super+z": "esc:u", "super+shift+z": "esc:y", "super+a": "esc:a", "super+f": "esc:s",
-    "super+x": "esc:x",
-}
-UNBOUND = ("super+t", "super+d", "super+shift+d")
-SHORTCUTS = {"⌘1": "super+digit_1", "⌘2": "super+digit_2", "⌘3": "super+digit_3",
+    "super+x": "esc:x", "super+shift+comma": "esc:r",
+    "super+d": "ignore", "super+shift+d": "ignore",
+    "ctrl+shift+g": "esc:/", "super+shift+e": "esc:'", "super+enter": "esc:*",
+}.items()}
+# Modo terminal: ⌘B ⌘J ⌘P ⌘⇧P convierten la pestaña (F13–F16 con Super, que
+# recoge config/zsh/vkterm.zsh), ⌘+ ⌘- ⌘0 cambian el tamaño de letra
+# (F17–F19) y ⌘O abre «Abrir reciente» (F20); el resto son los de Ghostty.
+TERMINAL_KEYBINDS = {"super+b": "csi:25;9~", "super+j": "csi:26;9~",
+                     "super+p": "csi:28;9~", "super+shift+p": "csi:29;9~", "super+o": "csi:34;9~",
+                     "super++": "csi:31;9~", "super+=": "csi:31;9~",
+                     "super+-": "csi:32;9~", "super+0": "csi:33;9~"}
+GHOSTTY_DEFAULTS = {"super+key_t": "new_tab", "super+shift+comma": "reload_config",
+                    "super+key_n": "new_window", "super+shift+key_n": "new_window",
+                    "super+d": "new_split:right", "super+w": "close_surface",
+                    "super+k": "clear_screen", "super+f": "start_search", "super+digit_1": "goto_tab:1",
+                    "super+z": "undo", "super+a": "select_all", "ctrl+tab": "next_tab",
+                    "super+c": "copy_to_clipboard:mixed"}
+SHORTCUTS = {name: "vkterm/" + trigger for name, trigger in {
+             "⌘1": "super+digit_1", "⌘2": "super+digit_2", "⌘3": "super+digit_3",
              "⌘4": "super+digit_4", "⌘5": "super+digit_5", "⌘B": "super+b", "⌘J": "super+j",
              "⌥⌘B": "super+alt+b", "⌘W": "super+w", "⌘P": "super+p", "⌘⇧P": "super+shift+p",
+             "⌘N": "super+n",
              "⌘S": "super+s",
              "⌘⌥←": "super+alt+arrow_left", "⌘⌥→": "super+alt+arrow_right",
              "⌃Tab": "ctrl+tab", "⌃⇧Tab": "ctrl+shift+tab",
              "⌘⌥↑": "super+alt+arrow_up", "⌘⌥↓": "super+alt+arrow_down",
              "⌘←": "super+arrow_left", "⌘→": "super+arrow_right",
              "⌘K ⌘S": "super+k>super+s", "⌘K Z": "super+k>z", "⌘K ⌘T": "super+k>super+t",
+             "⌘K ⌘L": "super+k>super+l", "⌘+": "super++", "⌘-": "super+-", "⌘0": "super+0",
+             "⌘K F": "super+k>f", "⌘O": "super+o", "⌘⇧,": "super+shift+comma",
              "⌘Z": "super+z", "⌘⇧Z": "super+shift+z", "⌘A": "super+a", "⌘F": "super+f",
-             "⌘X": "super+x", "⌘C": "super+c"}
+             "⌘X": "super+x", "⌘C": "super+c", "⌘V": "super+v",
+             "⌃⇧G": "ctrl+shift+g", "⌘⇧E": "super+shift+e", "⌘Enter": "super+enter"}.items()}
+CONFIRM_TITLE = "Cerrar carpeta"
+SCM_TITLE = "Control de código fuente"
+BRANCHES_TITLE = "Comparar con otra rama"
+RECENT_TITLE = "Abrir reciente"
+SHIFT_ENTER = b"\x1b[13;2u"  # protocolo de teclado de kitty
+MENU_TITLE = "Menú"
+TEST_APP_ID = "io.github.vk62001.vkterm.test"
 
 
 def alt(key):
@@ -115,13 +160,15 @@ def paste(text):
 class Client:
     """A Zellij client running in its own pseudo-terminal."""
 
-    def __init__(self, argv, cwd):
+    def __init__(self, argv, cwd, env=None):
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             os.chdir(cwd)
             os.environ["TERM"] = "xterm-256color"
-            # Tema y estado de Micro propios: no tocan los del usuario.
+            # Tema, estado de Micro y memoria propios: no tocan los del usuario.
             os.environ["VKTERM_STATE_DIR"] = str(Path(cwd) / "state")
+            os.environ["DISABLE_AUTO_UPDATE"] = OMZ_NO_UPDATE
+            os.environ.update(env or {})
             os.execv(argv[0], argv)
         fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
         os.kill(self.pid, signal.SIGWINCH)
@@ -202,11 +249,15 @@ class Session:
         return run("zellij", "-s", self.name, "action", *args)
 
     def panes(self):
-        # Se descartan solo los plugins de servicio (barra y zellij:link).
-        # Incluye los paneles ocultos (is_suppressed).
+        # Se descartan solo los plugins de servicio: zellij:link y la barra de
+        # estado (src/status.rs, la única que no se puede enfocar). Incluye
+        # los paneles ocultos (is_suppressed).
         return [p for p in json.loads(self.action("list-panes", "-a", "-j"))
-                if p["plugin_url"] not in ("zellij:link", "compact-bar")
-                and p["title"] != "compact-bar"]
+                if p["plugin_url"] != "zellij:link" and (p["is_selectable"] or not p["is_plugin"])]
+
+    def status_bar(self):
+        return next((p for p in json.loads(self.action("list-panes", "-a", "-j"))
+                     if p["is_plugin"] and not p["is_selectable"] and p["plugin_url"] != "zellij:link"), None)
 
     def pane(self, title):
         return next((p for p in self.panes() if p["title"] == title), None)
@@ -248,10 +299,12 @@ class Session:
                 if not p["is_plugin"] and (p.get("default_bg") or "").lower() == INACTIVE_BG}
 
     def mode(self):
-        bar = next(p for p in json.loads(self.action("list-panes", "-a", "-j"))
-                   if p["title"] == "compact-bar")
-        view = self.plugin_view(pane_id(bar))
-        return next((m for m in ("LOCKED", "NORMAL", "PANE") if m in view), "?")
+        """La barra de estado solo muestra el modo de Zellij si no es LOCKED."""
+        bar = self.status_bar()
+        view = self.plugin_view(pane_id(bar)) if bar else ""
+        if not view.strip():
+            return "?"
+        return next((m for m in ("NORMAL", "PANE", "TAB", "RESIZE", "SCROLL", "SESSION") if m in view), "LOCKED")
 
 
 def pane_id(pane):
@@ -313,6 +366,9 @@ def ghostty_keybinds():
     for line in ghostty_cli("+list-keybinds", "--plain").splitlines():
         if line.startswith("keybind = "):
             trigger, _, action = line[len("keybind = "):].partition("=")
+            # Un atajo con el carácter "=" (super+==acción).
+            if action.startswith("=") and trigger.endswith("+"):
+                trigger, action = trigger + "=", action[1:]
             if trigger == "chain" and last:
                 binds[last] += "|" + action
             else:
@@ -375,6 +431,14 @@ def check_config():
     zcheck = run("zellij", "--config-dir", str(ROOT / "config" / "zellij"), "setup", "--check",
                  env=dict(os.environ, VKTERM_HOME=str(ROOT)))
     check("zellij setup --check acepta config.kdl", "Well defined" in zcheck)
+    gen = subprocess.run([sys.executable, str(ROOT / "scripts" / "gen-themes.py"), "--check"],
+                         capture_output=True, text=True)
+    check("los %d temas generados están al día (scripts/gen-themes.py --check)" % len(THEMES),
+          gen.returncode == 0, (gen.stdout + gen.stderr).strip()[-160:])
+    settings = json.loads((ROOT / "config" / "micro" / "settings.json").read_text())
+    check("Micro: color de 24 bits, pareja resaltada, guías de sangría y cierre de brackets",
+          settings.get("truecolor") == "on" and settings.get("matchbracestyle") == "highlight"
+          and "ispace=│" in settings.get("showchars", "") and settings.get("autoclose") is True)
     if not GHOSTTY.exists():
         check("Ghostty instalado", False, "se omiten las comprobaciones del perfil")
         return cmd
@@ -384,18 +448,54 @@ def check_config():
     effective = ghostty_cli("+show-config")
     check("perfil efectivo: los dos Option escriben caracteres (como VS Code)",
           "macos-option-as-alt = false" in effective)
-    # El tema puede venir de config/local/theme.ghostty (⌘K ⌘T).
-    check("perfil efectivo: título y tema de vkTERM",
-          "title = vkTERM" in effective and re.search(r"^theme = \S", effective, re.M))
-    launcher = (ROOT / "bin" / "vkterm-ghostty").read_text()
-    check("el lanzador no carga ~/.config/ghostty", "--config-default-files=false" in launcher)
+    # El tema puede venir de config/local/theme.ghostty (⌘K ⌘T). Sin `title`:
+    # con él, Ghostty ignora OSC 2, con el que bin/vkterm identifica su pestaña.
+    check("perfil efectivo: tema de vkTERM, sin título fijo y sin actualizaciones propias",
+          not re.search(r"^title = ", effective, re.M) and re.search(r"^theme = \S", effective, re.M)
+          and "auto-update = off" in effective)
+    launcher = (ROOT / "scripts" / "vkterm-app-launcher.c").read_text()
+    check("vkTERM.app no carga ~/.config/ghostty",
+          "--config-default-files=false" in launcher and "config/ghostty/vkterm.ghostty" in launcher)
     binds = ghostty_keybinds()
     wrong = {t: binds.get(t) for t, a in EXPECTED_KEYBINDS.items() if binds.get(t) != a}
-    check("atajos ⌘ efectivos de Ghostty", not wrong, "distintos: %s" % wrong if wrong else
+    check("modo IDE: atajos ⌘ efectivos de la tabla vkterm", not wrong, "distintos: %s" % wrong if wrong else
           "%d atajos traducidos" % len(EXPECTED_KEYBINDS))
-    check("splits y pestañas de Ghostty desactivados", not any(t in binds for t in UNBOUND))
-    check("⌘C nunca envía Ctrl-C", binds.get("super+c", "").startswith("copy_to_clipboard"))
-    check("⌘W ya no cierra la ventana", binds.get("super+w") == "esc:9")
+    wrong = {t: binds.get(t) for t, a in TERMINAL_KEYBINDS.items() if binds.get(t) != a}
+    check("modo terminal: ⌘B ⌘J ⌘P ⌘⇧P convierten la pestaña y ⌘+ ⌘- ⌘0 ⌘O van a zsh (F13–F20 con Super)",
+          not wrong, str(wrong or ""))
+    native = [t for t, a in binds.items() if "font_size" in a]
+    check("ningún atajo usa el tamaño de letra de Ghostty: su menú no se queda ⌘- ni ⌘0",
+          not native, ", ".join(native))
+    wrong = {t: binds.get(t) for t, a in GHOSTTY_DEFAULTS.items() if binds.get(t) != a}
+    check("modo terminal: pestañas, divisiones, buscar, limpiar y cerrar son los de Ghostty",
+          not wrong, str(wrong or ""))
+    # Con el carácter, el atajo iría al menú de Ghostty, que macOS resuelve
+    # antes que la tabla del IDE (⌘K ⌘T abría una pestaña).
+    check("⌘T, ⌘N y ⌘⇧, por tecla física: sin atajo en el menú, la tabla del IDE los recibe",
+          "super+t" not in binds and "super+n" not in binds and "super+shift+," not in binds)
+    check("⌘C nunca envía Ctrl-C", binds.get("vkterm/super+c", "").startswith("copy_to_clipboard"))
+    # +list-keybinds no muestra el prefijo performable:, se mira en el perfil.
+    check("⌘V en el modo terminal: pega el texto y, si no hay, deja pasar la tecla (bin/vkterm-agent)",
+          re.search(r"^keybind = performable:super\+v=paste_from_clipboard$", PROFILE.read_text(), re.M)
+          and binds.get("super+v") == "paste_from_clipboard" and os.access(ROOT / "bin" / "vkterm-agent", os.X_OK))
+    check("⌘W en el IDE cierra la pestaña del editor, no la de Ghostty", binds.get("vkterm/super+w") == "esc:9")
+    # Con ⌘Enter en su menú (pantalla completa), macOS lo resolvería antes que
+    # la tabla del IDE, como pasaba con ⌘T: el commit no llegaría.
+    check("⌘Enter es el commit del IDE y la pantalla completa queda en ⌃⌘F (sin ⌘Enter en el menú)",
+          binds.get("super+enter") == "ignore" and binds.get("super+ctrl+f") == "toggle_fullscreen"
+          and not [t for t, a in binds.items() if a == "toggle_fullscreen" and "enter" in t])
+    zellij_config = (ROOT / "config" / "zellij" / "config.kdl").read_text()
+    # El único Detach es el de «Traer el IDE aquí» (⌥`, que solo escribe
+    # bin/vkterm-surface detach): la pestaña nueva se adjunta enseguida.
+    check("la sesión termina con su pestaña (on_force_close \"quit\"; Detach solo con ⌥`)",
+          re.search(r'^on_force_close "quit"', zellij_config, re.M)
+          and re.findall(r'bind "([^"]+)" \{ Detach; \}', zellij_config) == ["Alt `"]
+          and zellij_config.count("Detach;") == 1)
+    zsh_ok = all(subprocess.run(["zsh", "-n", str(ROOT / "config" / "zsh" / f)]).returncode == 0
+                 for f in (".zshenv", "vkterm.zsh"))
+    check("integración de zsh del modo terminal (config/zsh) sin errores de sintaxis", zsh_ok)
+    check("plugin Lua de memoria del editor (config/micro/plugins/vkterm)",
+          (ROOT / "config" / "micro" / "plugins" / "vkterm" / "vkterm.lua").exists())
     # Los bytes que la prueba envía salen de la configuración efectiva.
     return {name: action_bytes(binds[trigger]) for name, trigger in SHORTCUTS.items()
             if trigger in binds
@@ -447,7 +547,7 @@ def check_workspace(s):
 
 def scenario_pty(cmd, tmp):
     project = new_project(tmp, "pty")
-    launcher = [str(ROOT / "bin" / "vkterm"), str(project)]
+    launcher = [str(ROOT / "bin" / "vkterm"), "--here", str(project)]
     before = sessions()
     client = Client(launcher, tmp)
     name = wait_new_session(before, timeout=60)
@@ -459,19 +559,58 @@ def scenario_pty(cmd, tmp):
     try:
         print("Workspace")
         if check_workspace(s):
+            versions_pty(s, client)
             keyboard_pty(s, client, cmd)
             editor_pty(s, client, cmd, project)
             explorer_pty(s, client, cmd, project)
+            newfile_pty(s, client, cmd, project)
             toggles_pty(s, client, cmd)
             dimming_pty(s, client, cmd)
             shortcuts_pty(s, client, cmd)
             themes_pty(s, client, cmd, launcher, tmp)
+            fonts_pty(s, client, cmd, tmp)
+            brackets_pty(s, client, cmd, project)
+            context_menu_pty(s, client, cmd, project)
             shell_pty(s, client, cmd, project)
             client, sleeper = processes_pty(s, client, tmp)
             sessions_pty(s, client, launcher, tmp, sleeper)
     finally:
         for created in sessions() - before:
             run("zellij", "kill-session", created)
+
+
+def zellij_client_args(client):
+    """Argumentos del cliente de Zellij del pseudoterminal. El proceso de la
+    prueba es bin/vkterm, que lo lanza como hijo (para abrir después otra
+    carpeta en la misma pestaña, «Abrir reciente»)."""
+    pids = [client.pid]
+    while pids:
+        pid = pids.pop(0)
+        args = run("ps", "-o", "command=", "-p", str(pid)).split()
+        if args and Path(args[0]).name == "zellij":
+            return args
+        pids += [int(child) for child in run("pgrep", "-P", str(pid)).split()]
+    return []
+
+
+def versions_pty(s, client):
+    """Una sesión no recibe la configuración ni las ventanas de otra versión."""
+    args = zellij_client_args(client)
+    config = Path(args[args.index("--config-dir") + 1]) if "--config-dir" in args else None
+    repo = ROOT / "config" / "zellij"
+    same = config and all((config / f.relative_to(repo)).read_bytes() == f.read_bytes()
+                          for f in repo.rglob("*") if f.is_file())
+    check("la sesión usa su propia copia de la configuración de Zellij (no la del repositorio)",
+          bool(same) and config.parent.name == "zellij" and config != repo, str(config))
+    before = len(s.panes())
+    # La CLI no resuelve el alias de config.kdl.
+    url = "file:" + str(ROOT / "plugins" / "vkterm" / "target" / "wasm32-wasip1" / "release" / "vkterm.wasm")
+    launched = s.action("launch-plugin", "--floating", "--configuration", "mode=desconocido", url).strip()
+    time.sleep(2.0)
+    check("una ventana con un mode desconocido se cierra (no es un segundo explorador)",
+          launched.startswith("plugin_")
+          and wait_until(lambda: len(s.panes()) == before and not any(p["is_floating"] for p in s.panes())),
+          launched or "no se lanzó", s)
 
 
 def click(client, pane, line):
@@ -648,6 +787,44 @@ def explorer_pty(s, client, cmd, project):
           wait_until(lambda: ".vkterm" not in micro_tabs(s) and micro_tabs(s)), micro_tabs(s).strip())
 
 
+def newfile_pty(s, client, cmd, project):
+    print("⌘N: Nuevo archivo, como el del explorador de VS Code")
+
+    def prompt_view():
+        p = s.pane(NEWFILE_TITLE)
+        return s.plugin_view(pane_id(p)) if p else ""
+
+    def opened():
+        return wait_until(lambda: (p := s.pane(NEWFILE_TITLE)) and p["is_floating"] and p["is_focused"])
+
+    client.send(cmd["⌘1"], HOME, pause=0.6)
+    client.send(cmd["⌘N"], pause=1.0)
+    check("⌘N pide el nombre en una ventana flotante, en la carpeta seleccionada (src/)",
+          opened() and wait_until(lambda: "En src/" in prompt_view()), session=s)
+    client.send(b"App.tsx", pause=0.8)
+    check("avisa si ya existe", wait_until(lambda: "Ya existe src/App.tsx" in prompt_view()),
+          " | ".join(l.strip("│ ") for l in prompt_view().splitlines()[1:3]))
+    client.send(ctrl("u"), b"ui/Nuevo.tsx", pause=0.8)
+    check("con / crea también la carpeta", wait_until(lambda: "Se creará src/ui/Nuevo.tsx" in prompt_view()))
+    client.send(ENTER, pause=1.0)
+    created = project / "src" / "ui" / "Nuevo.tsx"
+    check("Enter lo crea vacío, lo abre en el editor y lo muestra en el explorador",
+          wait_until(lambda: s.pane(NEWFILE_TITLE) is None and created.is_file()
+                     and micro_status(s).startswith("src/ui/Nuevo.tsx ") and s.focused() == "Editor")
+          and created.read_text() == ""
+          and wait_until(lambda: (lambda v: "▾ ui" in v and "Nuevo.tsx" in v)("\n".join(s.explorer()))),
+          micro_status(s)[:40], s)
+    client.send(cmd["⌘⇧P"], pause=1.0)
+    client.send(b"nuevoarchivo", ENTER, pause=1.0)
+    check("«Archivo: Nuevo archivo…» de la paleta; con un archivo seleccionado, en su carpeta",
+          opened() and wait_until(lambda: "En src/ui/" in prompt_view()), session=s)
+    client.send(b"x.ts", ESC, pause=1.0)
+    check("Esc cancela sin crear nada",
+          wait_until(lambda: s.pane(NEWFILE_TITLE) is None) and not (created.parent / "x.ts").exists())
+    client.send(cmd["⌘2"], cmd["⌘W"], pause=0.8)
+    wait_until(lambda: not micro_status(s).startswith("src/ui/Nuevo.tsx "))
+
+
 def toggles_pty(s, client, cmd):
     print("⌘B / ⌘J / ⌥⌘B: mostrar y ocultar sin cerrar procesos")
     g0 = s.geometry()
@@ -703,7 +880,8 @@ def background_sgr(color):
 
 
 def foreground_colors(view):
-    return set(re.findall(r"38;2;\d+;\d+;\d+", view))
+    """Colores de texto y fondo de 24 bits de un plugin (la barra de estado)."""
+    return set(re.findall(r"[34]8;2;\d+;\d+;\d+", view))
 
 
 def dimming_pty(s, client, cmd):
@@ -762,12 +940,16 @@ def shortcuts_pty(s, client, cmd):
         pattern = r"(^|\s{2})(%s)(\s{2}|$)" % re.escape(heading)
         return next((m.start(2) for r in rows if (m := re.search(pattern, r))), None)
     left = {column(h) for h in ("Paneles", "Editor", "Explorador")}
-    right = {column(h) for h in ("Agentes y Shell", "Zellij", "Teclado")}
+    right = {column(h) for h in ("Agentes y Shell", "Ventana", "Teclado")}
     check("categorías en columnas de tres, como Unity",
           len(left) == 1 and len(right) == 1 and None not in left | right and max(left) < min(right),
           "columnas %s y %s" % (sorted(left, key=str), sorted(right, key=str)))
     missing = [name for name in SHORTCUTS if not all(part in view for part in name.split())]
     check("incluye todos los atajos ⌘ del perfil de Ghostty", not missing, ", ".join(missing))
+    colored = s.plugin_view(pane_id(window), ansi=True)
+    ui = DEFAULT_THEME["ui"]
+    check("con los colores del editor del tema y las teclas en etiquetas (keybindingLabel)",
+          background_sgr(ui["editor_bg"]) in colored and background_sgr(ui["keycap_bg"]) in colored)
     check("el resto de paneles queda atenuado", wait_until(lambda: s.dimmed() == set(TERMINALS)),
           str(sorted(s.dimmed())))
     client.send(cmd["⌘K ⌘S"], pause=1.0)
@@ -783,6 +965,23 @@ def shortcuts_pty(s, client, cmd):
     check("se cierra al pasar el foco a otro panel (⌘5)",
           opened and wait_until(lambda: s.pane(SHORTCUTS_TITLE) is None and s.focused() == "Shell"),
           session=s)
+    # Releer la salida de un agente subiendo con la rueda: Zellij 0.45 pasaba
+    # al modo Scroll (scroll_mode_sync) y los atajos ⌘ no tenían destino.
+    client.send(b"seq 1 300\r", pause=1.0)
+    shell = s.pane("Shell")
+    x, y = shell["pane_content_x"] + 6, shell["pane_content_y"] + 4
+    for _ in range(5):
+        client.send(b"\x1b[<64;%d;%dM" % (x, y), pause=0.15)
+    mode = s.mode()
+    client.send(cmd["⌘K ⌘S"], pause=1.0)
+    opened = wait_until(lambda: (p := s.pane(SHORTCUTS_TITLE)) and p["is_focused"])
+    client.send(ESC, pause=1.0)
+    check("con el panel subido con la rueda sigue en LOCKED y ⌘K ⌘S la abre",
+          mode == "LOCKED" and opened and wait_until(lambda: s.pane(SHORTCUTS_TITLE) is None),
+          "modo %s" % mode, s)
+    for _ in range(5):
+        client.send(b"\x1b[<65;%d;%dM" % (x, y), pause=0.15)
+    client.send(b"clear\r", pause=0.8)
     check("no deja paneles de más", len(s.panes()) == len(TITLES), session=s)
     # Zellij guarda los últimos permisos pedidos por el plugin: si la ventana
     # pidiera menos, el explorador volvería a preguntar en la siguiente sesión.
@@ -791,7 +990,7 @@ def shortcuts_pty(s, client, cmd):
 
 
 def themes_pty(s, client, cmd, launcher, tmp):
-    print("⌘K ⌘T: tema de color (como VS Code)")
+    print("⌘K ⌘T: temas de VS Code (como «Preferences: Color Theme»)")
     state = tmp / "state" / "theme"
 
     def saved():
@@ -802,69 +1001,278 @@ def themes_pty(s, client, cmd, launcher, tmp):
         client.send(cmd["⌘K ⌘T"], pause=1.0)
         return wait_until(lambda: (p := s.pane(THEMES_TITLE)) and p["is_floating"] and p["is_focused"] and p)
 
-    def explorer_dimmed_with(theme):
-        return wait_until(lambda: background_sgr(theme["inactive_bg"])
-                          in s.plugin_view(explorer, ansi=True), timeout=5)
+    def explorer_view():
+        return s.plugin_view(explorer, ansi=True)
 
-    def editor_reversed():
-        """Barras de Micro en vídeo inverso (SGR 7): esquema de los temas claros."""
-        return re.search(r"\x1b\[(?:[0-9;]*;)?7(?:;[0-9;]*)?m",
-                         s.plugin_view(pane_id(s.pane("Editor")), ansi=True))
+    def explorer_dimmed_with(theme):
+        return wait_until(lambda: background_sgr(theme["inactive_bg"]) in explorer_view(), timeout=5)
+
+    def bar_with(theme):
+        return wait_until(lambda: background_sgr(theme["ui"]["status_bg"]) in s.plugin_view(bar, ansi=True), timeout=5)
+
+    def micro_with(theme):
+        """Micro con el esquema del tema: su barra de estado en sus colores de 24 bits."""
+        bg = theme["syntax"]["statusline"].split(",")[1]
+        return wait_until(lambda: background_sgr(bg) in s.plugin_view(pane_id(s.pane("Editor")), ansi=True),
+                          timeout=8)
+
+    def follows(theme):
+        """Lo que cambia con el tema: atenuado, barra de estado y Micro."""
+        dim = explorer_dimmed_with(theme) if theme["dim"] else True
+        return dim and bar_with(theme) and micro_with(theme)
 
     explorer = pane_id(s.pane("Explorador"))
-    bar = pane_id(next(p for p in json.loads(s.action("list-panes", "-a", "-j")) if p["title"] == "compact-bar"))
-    default_bar = foreground_colors(s.plugin_view(bar, ansi=True))
-    dark_editor = not editor_reversed()
-    second = THEMES[1]
+    bar = pane_id(s.status_bar())
+    default = DEFAULT_THEME
+    client.send(cmd["⌘1"], pause=1.0)
+    check("el explorador con los colores de la barra lateral de VS Code (sideBar, list.activeSelection)",
+          wait_until(lambda: background_sgr(default["ui"]["sidebar_bg"]) in explorer_view()
+                     and background_sgr(default["ui"]["selection_bg"]) in explorer_view(), timeout=5))
+    check("la barra de estado con statusBar.background del tema", bar_with(default))
+    check("Micro con el esquema del tema, en color de 24 bits", micro_with(default))
     client.send(cmd["⌘2"], pause=0.8)
     picker = picker_opened()
     check("se abre el selector flotante con el foco", picker, session=s)
     if not picker:
         return
     view = wait_until(lambda: (v := s.plugin_view(pane_id(picker))) and "●" in v and v) or ""
-    check("lista todos los temas y marca el guardado",
-          all(t["name"] in view for t in THEMES)
-          and any("●" in r and DEFAULT_THEME["name"] in r for r in view.splitlines()))
-    client.send(DOWN, pause=1.5)
-    check("↓ prueba el siguiente tema y lo guarda", wait_until(lambda: saved() == second["id"]), saved())
-    check("el atenuado cambia al del tema", explorer_dimmed_with(second))
-    check("Zellij cambia de tema en la sesión",
-          wait_until(lambda: foreground_colors(s.plugin_view(bar, ansi=True)) - default_bar, timeout=5))
+    check("agrupa los temas como VS Code y marca el guardado",
+          "temas oscuros" in view and any("●" in r and default["name"] in r for r in view.splitlines()))
+    i = PICKER_ORDER.index(default)
+    second = PICKER_ORDER[i + 1]
+    client.send(DOWN, pause=1.0)
+    check("↓ prueba el siguiente tema (%s) y lo guarda" % second["name"],
+          wait_until(lambda: saved() == second["id"]), saved())
+    check("cambian el atenuado, la barra de estado y Micro", follows(second), session=s)
     client.send(ESC, pause=1.5)
     check("Esc cierra y vuelve al tema que había",
-          wait_until(lambda: s.pane(THEMES_TITLE) is None and saved() == DEFAULT_THEME["id"])
-          and explorer_dimmed_with(DEFAULT_THEME)
-          and wait_until(lambda: foreground_colors(s.plugin_view(bar, ansi=True)) == default_bar, timeout=5),
+          wait_until(lambda: s.pane(THEMES_TITLE) is None and saved() == default["id"]) and follows(default),
           saved(), s)
+
     if picker_opened():
-        client.send(DOWN, pause=1.0)
-        client.send(ENTER, pause=1.5)
-    check("Enter deja el tema elegido",
-          wait_until(lambda: s.pane(THEMES_TITLE) is None and saved() == second["id"])
-          and explorer_dimmed_with(second), saved(), s)
-    check("Micro cambia a su esquema de tema claro", dark_editor and wait_until(editor_reversed, timeout=6))
-    second_bar = foreground_colors(s.plugin_view(bar, ansi=True))
-    before = sessions()
-    Client([launcher[0], "--new", launcher[1]], tmp)
-    fresh = wait_new_session(before, timeout=30)
+        client.send(b"solar", pause=1.5)
+        view = s.plugin_view(pane_id(s.pane(THEMES_TITLE)))
+        solar = [t for t in PICKER_ORDER if "solar" in t["name"].lower()]
+        check("escribir filtra: «solar» deja solo los dos Solarized y prueba el primero",
+              all(t["name"] in view for t in solar) and "Dracula" not in view
+              and wait_until(lambda: saved() == solar[0]["id"]), saved())
+        client.send(ESC, pause=1.5)
+        wait_until(lambda: s.pane(THEMES_TITLE) is None and saved() == default["id"])
+
+    # Recorrer la lista deprisa: cada cambio recarga Ghostty (~2 s); se aplican
+    # de uno en uno y queda el último (src/applier.rs).
+    before = (tmp / "pty" / "demo" / DEMO_FILE).read_text()
+    if picker_opened():
+        for _ in range(12):
+            client.send(DOWN, pause=0.05)
+        client.send(ENTER, pause=1.0)
+    storm = PICKER_ORDER[min(i + 12, len(PICKER_ORDER) - 1)]
+    check("12 × ↓ seguidas y Enter: queda el último (%s)" % storm["name"],
+          wait_until(lambda: s.pane(THEMES_TITLE) is None and saved() == storm["id"], timeout=10)
+          and follows(storm), saved(), s)
+    status = micro_status(s)
+    check("el editor no recibe teclas al cambiar de tema (el archivo sigue sin cambios)",
+          not re.match(r"\S+ \+", status) and (tmp / "pty" / "demo" / DEMO_FILE).read_text() == before, status[:50])
+
+    second_bar = background_sgr(storm["ui"]["status_bg"])
+    launched = sessions()
+    Client(launcher[:-1] + ["--new", launcher[-1]], tmp)
+    fresh = wait_new_session(launched, timeout=30)
     if fresh:
         other = Session(fresh)
         grant_plugin(other)
-        other_bar = pane_id(next(p for p in json.loads(other.action("list-panes", "-a", "-j"))
-                                 if p["title"] == "compact-bar"))
+        other_bar = pane_id(wait_until(other.status_bar, timeout=10))
         check("una sesión nueva arranca con el tema guardado",
-              wait_until(lambda: foreground_colors(other.plugin_view(other_bar, ansi=True)) == second_bar)
-              and wait_until(lambda: background_sgr(second["inactive_bg"])
+              wait_until(lambda: second_bar in other.plugin_view(other_bar, ansi=True))
+              and wait_until(lambda: background_sgr(storm["inactive_bg"])
                              in other.plugin_view(pane_id(other.pane("Explorador")), ansi=True), timeout=8))
         run("zellij", "kill-session", fresh)
     else:
         check("una sesión nueva arranca con el tema guardado", False, "no arrancó")
+
+    hc = next(t for t in PICKER_ORDER if not t["dim"])
     if picker_opened():
-        client.send(HOME, pause=1.0)
+        client.send(hc["name"].encode(), pause=1.5)
+        client.send(ENTER, pause=1.5)
+    colored = lambda: [p["title"] for p in s.panes() if not p["is_plugin"] and p.get("default_bg")]
+    check("%s no atenúa los paneles sin foco" % hc["name"],
+          wait_until(lambda: saved() == hc["id"] and not colored(), timeout=6), str(colored()), s)
+    if picker_opened():
+        client.send(b"mocha", pause=1.0)
         client.send(ENTER, pause=1.5)
     check("se puede volver al predeterminado",
-          wait_until(lambda: s.pane(THEMES_TITLE) is None and saved() == DEFAULT_THEME["id"])
-          and explorer_dimmed_with(DEFAULT_THEME), saved(), s)
+          wait_until(lambda: s.pane(THEMES_TITLE) is None and saved() == default["id"]) and follows(default),
+          saved(), s)
+
+
+def fonts_pty(s, client, cmd, tmp):
+    print("⌘K ⌘L: fuente con prueba en vivo; ⌘+ ⌘- ⌘0: tamaño que se recuerda")
+    state = tmp / "state" / "font.ghostty"
+    env = dict(os.environ, VKTERM_STATE_DIR=str(tmp / "state"))
+    fonts = run(str(ROOT / "bin" / "vkterm-font"), "list", env=env).splitlines()
+
+    def font():
+        text = state.read_text() if state.exists() else ""
+        family = re.findall(r'^font-family = "(.+)"$', text, re.M)
+        size = re.findall(r"^font-size = (\d+)$", text, re.M)
+        return (family[-1] if family else "", int(size[-1]) if size else 13)
+
+    def opened():
+        client.send(cmd["⌘K ⌘L"], pause=1.0)
+        return wait_until(lambda: (p := s.pane(FONTS_TITLE)) and p["is_floating"] and p["is_focused"] and p)
+
+    client.send(cmd["⌘2"], pause=0.8)
+    window = opened()
+    view = window and wait_until(lambda: (v := s.plugin_view(pane_id(window))) and "Tamaño" in v and len(fonts) > 1
+                                 and fonts[1] in v and v)
+    check("se abre el selector con las fuentes monoespaciadas instaladas", bool(view), session=s)
+    if not view:
+        return
+    client.send(DOWN, pause=1.0)
+    client.send(RIGHT, pause=1.0)
+    check("↓ prueba la siguiente fuente y → aumenta el tamaño",
+          wait_until(lambda: font() == (fonts[1], 14)), str(font()))
+    client.send(ESC, pause=1.5)
+    check("Esc vuelve a la fuente y al tamaño de antes",
+          wait_until(lambda: s.pane(FONTS_TITLE) is None and font() == ("", 13)), str(font()), s)
+    menlo = next((f for f in fonts if f == "Menlo"), fonts[-1])
+    if opened():
+        client.send(menlo.lower().encode(), pause=1.0)
+        client.send(ENTER, pause=1.5)
+    check("escribir filtra y Enter deja la fuente (%s)" % menlo,
+          wait_until(lambda: s.pane(FONTS_TITLE) is None and font()[0] == menlo), str(font()))
+    client.send(cmd["⌘+"], pause=0.3)
+    client.send(cmd["⌘+"], pause=0.3)
+    check("⌘+ dos veces: 15 pt, guardado", wait_until(lambda: font() == (menlo, 15)), str(font()))
+    client.send(cmd["⌘-"], pause=0.5)
+    check("⌘-: 14 pt", wait_until(lambda: font() == (menlo, 14)), str(font()))
+    client.send(cmd["⌘0"], pause=0.5)
+    check("⌘0: el tamaño normal (13 pt)", wait_until(lambda: font() == (menlo, 13)), str(font()))
+    run(str(ROOT / "bin" / "vkterm-font"), "set", "(predeterminada)", env=env)
+
+
+def brackets_pty(s, client, cmd, project):
+    print("Brackets: guías de sangría, pareja resaltada, cierre y envolver la selección")
+    client.send(cmd["⌘2"], cmd["⌘P"], b"header", ENTER, pause=1.2)
+    wait_until(lambda: micro_status(s).startswith(DEMO_FILE + " "))
+    check("guías de sangría (│) en cada nivel",
+          wait_until(lambda: any(re.search(r"^\s*\d+\s+│ │ ", l) for l in s.screen("Editor").splitlines()), timeout=4),
+          next((l for l in s.screen("Editor").splitlines() if "return" in l), "")[:60])
+    target = project / "src" / "brackets.ts"
+    target.write_text("")
+    client.send(cmd["⌘P"], b"brackets", ENTER, pause=1.2)
+    wait_until(lambda: micro_status(s).startswith("src/brackets.ts "))
+    client.send(b"foo(", pause=0.3)
+    client.send(b"1", cmd["⌘S"], pause=0.8)
+    check("al escribir ( se añade )", wait_until(lambda: target.read_text().startswith("foo(1)")),
+          repr(target.read_text()[:20]))
+    client.send(cmd["⌘→"], ENTER, b"x = valor", pause=0.3)
+    # ⇧← cinco veces, cada una por separado: Zellij lee una secuencia por escritura.
+    client.send(*[b"\x1b[1;2D"] * 5, pause=0.15)
+    client.send(b"(", cmd["⌘S"], pause=0.8)
+    check("con texto seleccionado, ( lo envuelve", wait_until(lambda: "x = (valor)" in target.read_text()),
+          repr(target.read_text()[-20:]))
+    match = DEFAULT_THEME["syntax"]["match-brace"].split(",")[1]
+    client.send(cmd["⌘←"], *[b"\x1b[C"] * 4, pause=0.15)
+    check("la pareja del bracket se resalta con el color del tema",
+          wait_until(lambda: background_sgr(match) in s.plugin_view(pane_id(s.pane("Editor")), ansi=True),
+                     timeout=4))
+    # Como estaba: Header.tsx y App.tsx abiertos (processes_pty cierra Micro con ellos).
+    client.send(cmd["⌘W"], pause=1.0)
+    target.unlink()
+
+
+def right_click(client, x, y):
+    """Clic derecho (protocolo SGR) en la celda (x, y) del terminal, desde 0."""
+    client.send(b"\x1b[<2;%d;%dM" % (x + 1, y + 1), pause=0.15)
+    client.send(b"\x1b[<2;%d;%dm" % (x + 1, y + 1), pause=0.8)
+
+
+def left_click(client, x, y):
+    client.send(b"\x1b[<0;%d;%dM" % (x + 1, y + 1), pause=0.05)
+    client.send(b"\x1b[<0;%d;%dm" % (x + 1, y + 1), pause=1.0)
+
+
+def context_menu_pty(s, client, cmd, project):
+    print("Menú contextual del editor (clic derecho)")
+    target = project / "src" / "menu.ts"
+    target.write_text("alfa beta\ngamma delta\n")
+    client.send(cmd["⌘2"], cmd["⌘P"], b"menu.ts", ENTER, pause=1.2)
+    wait_until(lambda: micro_status(s).startswith("src/menu.ts "))
+    editor = s.pane("Editor")
+
+    def cell(text):
+        """Celda del terminal en la que se ve `text` en el editor."""
+        rows = s.screen(editor).splitlines()
+        y = next(i for i, l in enumerate(rows) if text in l)
+        return editor["pane_content_x"] + rows[y].index(text), editor["pane_content_y"] + y
+
+    def menu():
+        pane = s.pane(MENU_TITLE)
+        return pane if pane and pane["is_floating"] and pane["is_focused"] else None
+
+    def entry(label, ansi=False):
+        """Celda de una entrada del menú y su fila tal como se dibuja."""
+        pane = menu()
+        rows = s.plugin_view(pane_id(pane), ansi=ansi).splitlines()
+        y = next(i for i, l in enumerate(rows) if label in l)
+        return (pane["pane_x"] + 3, pane["pane_y"] + y), rows[y]
+
+    def open_on(text):
+        right_click(client, *cell(text))
+        return wait_until(menu)
+
+    clipboard = run("osascript", "-e", "clipboard info")
+    x, y = cell("delta")
+    right_click(client, x, y)
+    opened = wait_until(menu)
+    view = s.plugin_view(pane_id(opened)) if opened else ""
+    check("el clic derecho abre el menú junto al puntero, con el foco y sus entradas",
+          opened and (opened["pane_x"], opened["pane_y"]) == (x + 1, y + 1)
+          and all(e in view for e in ("Cortar", "Copiar", "Pegar", "Seleccionar todo", "Paleta de comandos")),
+          "menú en %s, clic en %s" % (opened and (opened["pane_x"], opened["pane_y"]), (x, y)), s)
+    check("con el menú abierto, el editor no se atenúa", "Editor" not in s.dimmed(), str(sorted(s.dimmed())))
+    check("el cursor de Micro va a la línea del clic", micro_status(s).startswith("src/menu.ts (2,"),
+          micro_status(s)[:30])
+    client.send(ESC, pause=0.8)
+    check("Esc cierra el menú y el foco vuelve al editor",
+          wait_until(lambda: s.pane(MENU_TITLE) is None and s.focused() == "Editor"), session=s)
+
+    # Con el portapapeles interno de Micro: la prueba no toca el del sistema.
+    client.send(ctrl("e"), b"set clipboard internal", ENTER, pause=0.8)
+    open_on("alfa")
+    client.send(DOWN, DOWN, ENTER, pause=1.0)
+    opened = open_on("gamma")
+    if opened:
+        left_click(client, *entry("Pegar")[0])
+    client.send(cmd["⌘S"], pause=0.8)
+    check("Copiar con ↓ ↓ Enter (sin selección, la línea) y Pegar con un clic, otra vez el menú",
+          wait_until(lambda: target.read_text() == "alfa beta\nalfa beta\ngamma delta\n"),
+          repr(target.read_text()[:40]))
+    hovered = False
+    if open_on("delta"):
+        (x, y), before = entry("Seleccionar todo", ansi=True)
+        client.send(b"\x1b[<35;%d;%dM" % (x + 1, y + 1), pause=0.5)
+        hovered = wait_until(lambda: entry("Seleccionar todo", ansi=True)[1] != before, timeout=3)
+        left_click(client, x, y)
+    client.send(b"vk-menu", cmd["⌘S"], pause=0.8)
+    check("con el ratón encima se resalta la entrada; un clic en «Seleccionar todo» la ejecuta",
+          hovered and wait_until(lambda: target.read_text().strip() == "vk-menu"),
+          "resaltada=%s %r" % (bool(hovered), target.read_text()[:30]))
+    if open_on("vk-menu"):
+        left_click(client, *entry("Paleta de comandos")[0])
+    check("«Paleta de comandos…» abre la paleta",
+          wait_until(lambda: (p := s.pane(COMMANDS_TITLE)) and p["is_focused"]), session=s)
+    client.send(ESC, pause=1.0)
+    x, y = cell("vk-menu")
+    if open_on("vk-menu"):
+        left_click(client, x, y)
+    check("un clic fuera cierra el menú",
+          wait_until(lambda: s.pane(MENU_TITLE) is None and s.focused() == "Editor"), session=s)
+    client.send(ctrl("e"), b"reset clipboard", ENTER, pause=0.8)
+    check("el menú no toca el portapapeles del sistema", run("osascript", "-e", "clipboard info") == clipboard)
+    client.send(cmd["⌘W"], pause=1.0)
+    target.unlink()
 
 
 def shell_pty(s, client, cmd, project):
@@ -961,70 +1369,454 @@ def processes_pty(s, client, tmp):
 
 
 def sessions_pty(s, client, launcher, tmp, sleeper):
-    print("Sesiones")
-    client.send(ctrl("g"), b"o", b"d")
-    detached = wait_until(lambda: not client.alive())
-    check("Ctrl-g o d desconecta y la sesión sigue viva",
-          detached and s.name in sessions() and (sleeper is None or pid_alive(sleeper)))
-    client = Client(launcher, tmp)
-    clients = wait_until(lambda: len(s.action("list-clients").splitlines()) == 2)
-    check("el mismo comando reanuda la misma sesión", clients and (sleeper is None or pid_alive(sleeper)))
+    print("Sesiones: duran lo que su pestaña")
+    client.send(ctrl("g"), b"o", b"d", pause=1.0)
+    check("Ctrl-g o d ya no desconecta (no hay sesiones sin ventana)",
+          client.alive() and s.name in sessions())
+    client.send(ESC, pause=0.6)
     before = sessions()
-    other = Client([launcher[0], "--new", launcher[1]], tmp)
+    Client(launcher[:-1] + ["--new", launcher[-1]], tmp)
     fresh = wait_new_session(before)
     check("--new crea otra sesión sin tocar la existente",
           fresh and fresh.startswith(s.name + "-") and s.name in sessions(), fresh or "")
     if fresh:
         run("zellij", "kill-session", fresh)
-    run("zellij", "kill-session", s.name)
-    wait_until(lambda: s.name not in sessions())
+    # «Traer el IDE aquí» sin Ghostty: el ⌥` que escribe `vkterm-surface
+    # detach` suelta este cliente, y otro se adjunta con `--attach`.
+    surface = tmp / "surface"
+    surface.write_text("id=prueba\n")
+    client.send(b"\x1b`", pause=1.0)
+    detached = wait_until(lambda: not client.alive(), timeout=5)
+    check("⌥` suelta el cliente (Detach) y la sesión sigue viva, con sus procesos",
+          detached and s.name in sessions() and (sleeper is None or pid_alive(sleeper)))
+    client = Client([str(ROOT / "bin" / "vkterm-workspace"), "--surface", str(surface),
+                     "--attach", s.name, launcher[-1]], tmp)
+    attached = wait_until(lambda: len(s.action("list-clients").splitlines()) == 2, timeout=10)
+    check("vkterm-workspace --attach se adjunta a esa sesión y le anota session= a la pestaña",
+          attached and client.alive() and ("session=%s\n" % s.name) in surface.read_text()
+          and (sleeper is None or pid_alive(sleeper)), surface.read_text().strip())
+    tabs, active = micro_tabs(s), micro_status(s).split(" ")[0]
+    time.sleep(1.5)
+    # Lo que hace macOS al cerrar la pestaña de Ghostty.
+    os.kill(client.pid, signal.SIGHUP)
+    gone = wait_until(lambda: s.name not in sessions(), timeout=15)
+    check("cerrar la pestaña (SIGHUP al cliente) termina la sesión y sus procesos",
+          gone and (sleeper is None or wait_until(lambda: not pid_alive(sleeper), timeout=5)))
     before = sessions()
     client = Client(launcher, tmp)
     restarted = wait_new_session(before)
-    check("tras cerrar la sesión, el mismo comando la recrea con el mismo nombre",
-          restarted == s.name, restarted or "")
+    check("el mismo comando la vuelve a crear, con el mismo nombre", restarted == s.name, restarted or "")
     if restarted:
-        print("  Tras el reinicio:")
-        check_workspace(s)
+        ready = wait_until(lambda: set(TITLES) <= {p["title"] for p in s.panes()}, timeout=20)
+        check("… y con las pestañas del editor que tenía",
+              ready and wait_until(lambda: micro_tabs(s) == tabs and micro_status(s).startswith(active + " "),
+                                   timeout=10),
+              "%s / %s" % (micro_tabs(s).strip(), micro_status(s)[:30]))
+
+
+# ------------------------------------------------- memoria y cerrar carpeta
+
+def start_workspace(launcher, tmp, env=None, prefix="vk-demo-"):
+    """Abre el IDE con `bin/vkterm --here`; devuelve (cliente, sesión lista)."""
+    before = sessions()
+    client = Client(launcher, tmp, env)
+    return client, ready_session(before, prefix)
+
+
+def ready_session(before, prefix="vk-demo-"):
+    """La sesión nueva (desde `before`) con todos sus paneles, o None."""
+    name = wait_new_session(before, prefix, timeout=60)
+    if not name:
+        return None
+    s = Session(name)
+    if not wait_until(lambda: set(TITLES) <= {p["title"] for p in s.panes()}, timeout=30):
+        return None
+    grant_plugin(s)
+    wait_until(lambda: micro_status(s), timeout=10)
+    time.sleep(1.5)  # el plugin aplica la memoria al tener todos los paneles
+    return s
+
+
+def confirm_view(s):
+    pane = s.pane(CONFIRM_TITLE)
+    return pane and pane["is_floating"] and pane["is_focused"] and s.plugin_view(pane_id(pane))
+
+
+def ended(client, s):
+    return wait_until(lambda: not client.alive() and s.name not in sessions(), timeout=15)
+
+
+def scenario_memory(cmd, tmp):
+    print("\nMemoria de la carpeta y ⌘K F (cerrar carpeta)")
+    project = new_project(tmp, "memoria")
+    app = project / "src" / "App.tsx"
+    original = app.read_text()
+    # Un `claude` de mentira: la prueba nunca arranca los agentes de verdad.
+    fakebin = tmp / "fakebin"
+    fakebin.mkdir()
+    (fakebin / "claude").write_text("#!/bin/sh\nexec sleep 300\n")
+    (fakebin / "claude").chmod(0o755)
+    env = {"PATH": "%s:%s" % (fakebin, os.environ["PATH"])}
+    launcher = [str(ROOT / "bin" / "vkterm"), "--here", str(project)]
+    before = sessions()
+    client, s = start_workspace(launcher, tmp, env)
+    try:
+        if not s:
+            check("el IDE de la carpeta arranca", False)
+            return
+        client.send(cmd["⌘1"], RIGHT, pause=0.8)
+        client.send(cmd["⌘P"], pause=1.0)
+        client.send(b"app", pause=0.8)
+        client.send(ENTER, pause=1.5)
+        client.send(cmd["⌥⌘B"], pause=1.0)
+        client.send(cmd["⌘5"], pause=2.5)  # la memoria se guarda cada segundo
+        tabs, active = micro_tabs(s), micro_status(s).split(" ")[0]
+        memory = Path(run(str(ROOT / "bin" / "vkterm-state"), "dir", str(project),
+                          env=dict(os.environ, VKTERM_STATE_DIR=str(tmp / "state"))).strip()) / "workspace"
+        memory = memory if memory.exists() else None
+        check("la memoria se guarda en el estado local (projects/<huella>/workspace)",
+              memory and "agents=0" in memory.read_text() and "expanded=src" in memory.read_text()
+              and "focus=shell" in memory.read_text(), memory.read_text().replace("\n", " ") if memory else "")
+        client.send(cmd["⌘K F"], pause=1.0)
+        check("⌘K F sin nada que perder cierra la carpeta sin preguntar", ended(client, s))
+
+        client, s = start_workspace(launcher, tmp, env)
+        if not s:
+            check("la carpeta se vuelve a abrir", False)
+            return
+        check("al volver a abrirla, Claude Code y Codex siguen ocultos",
+              wait_until(lambda: s.hidden() == {"Claude Code", "Codex"}), str(s.hidden()), s)
+        check("… el foco vuelve al Shell", wait_until(lambda: s.focused() == "Shell"), str(s.focused()))
+        check("… src sigue desplegada en el explorador", wait_until(lambda: "▾ src" in "\n".join(s.explorer())))
+        check("… y el editor tiene las mismas pestañas, con la misma activa",
+              wait_until(lambda: micro_tabs(s) == tabs and micro_status(s).startswith(active + " ")),
+              "%s / %s" % (micro_tabs(s).strip(), micro_status(s)[:30]))
+
+        client.send(cmd["⌘2"], b"vk-unsaved ", pause=1.5)
+        client.send(cmd["⌘K F"], pause=1.0)
+        view = wait_until(lambda: confirm_view(s), timeout=6) or ""
+        check("con un archivo sin guardar, ⌘K F pregunta y dice cuál",
+              "1 archivo sin guardar" in view and "src/App.tsx" in view and "Guardar y cerrar" in view
+              and "Claude Code" not in view, " | ".join(l.strip("│ ") for l in view.splitlines()[1:6]))
+        client.send(ESC, pause=1.0)
+        check("Esc cancela: la ventana se cierra y la carpeta sigue abierta",
+              wait_until(lambda: s.pane(CONFIRM_TITLE) is None) and s.name in sessions() and client.alive())
+        client.send(cmd["⌘K F"], pause=1.0)
+        wait_until(lambda: confirm_view(s), timeout=6)
+        client.send(ENTER, pause=1.0)
+        check("«Guardar y cerrar» guarda el archivo y cierra la carpeta",
+              ended(client, s) and app.read_text().startswith("vk-unsaved "))
+        app.write_text(original)
+
+        client, s = start_workspace(launcher, tmp, env)
+        client.send(cmd["⌘2"], b"vk-discard ", pause=1.5)
+        client.send(cmd["⌘K F"], pause=1.0)
+        wait_until(lambda: confirm_view(s), timeout=6)
+        client.send(RIGHT, ENTER, pause=1.0)
+        backups = tmp / "state" / "micro" / "backups"
+        check("«Cerrar sin guardar» cierra sin tocar el disco ni dejar copias de Micro",
+              ended(client, s) and app.read_text() == original
+              and not (backups.exists() and any(backups.iterdir())))
+
+        client, s = start_workspace(launcher, tmp, env)
+        client.send(cmd["⌥⌘B"], pause=1.0)
+        s.action("write", "-p", pane_id(s.pane("Claude Code")), "13")
+        agent = wait_until(lambda: not s.pane("Claude Code")["is_held"]
+                           and run("pgrep", "-f", "sleep 300").split(), timeout=6)
+        client.send(cmd["⌘K F"], pause=1.0)
+        view = wait_until(lambda: confirm_view(s), timeout=6) or ""
+        check("con Claude Code en marcha, ⌘K F pregunta (los agentes en espera no cuentan)",
+              agent and "Claude Code, que está en marcha" in view and "Codex" not in view
+              and "[ Cerrar ]" in view, " | ".join(l.strip("│ ") for l in view.splitlines()[1:5]))
+        client.send(ENTER, pause=1.0)
+        check("«Cerrar» termina la sesión y el agente",
+              ended(client, s) and wait_until(lambda: not run("pgrep", "-f", "sleep 300").strip(), timeout=5))
+    finally:
+        for created in sessions() - before:
+            run("zellij", "kill-session", created)
+
+
+# ------------------------------------------------------ «Abrir reciente» (⌘O)
+
+def scenario_recent(cmd, tmp):
+    print("\n«Abrir reciente» (⌘O) y abrir otra carpeta en la misma pestaña")
+    base = tmp / "reciente"
+    alfa, beta = base / "alfa", base / "beta"
+    for project in (alfa, beta):
+        shutil.copytree(ROOT / "examples" / "demo", project)
+    state = base / "state"
+    # Una app que no existe: ⇧Enter (ventana nueva) no debe abrir la de verdad.
+    env = {"VKTERM_APP_ID": "io.github.vk62001.vkterm.smoke-none"}
+    vkterm = str(ROOT / "bin" / "vkterm")
+    before = sessions()
+
+    def recent_view(s):
+        pane = s.pane(RECENT_TITLE)
+        return pane and pane["is_floating"] and pane["is_focused"] and s.plugin_view(pane_id(pane))
+
+    def open_recent(s):
+        """⌘O y espera a que la lista (no solo la ventana) esté cargada."""
+        client.send(cmd["⌘O"], pause=0.5)
+        return wait_until(lambda: (v := recent_view(s)) and "alfa  " in v and v, timeout=8) or ""
+
+    def listed(project_env=None):
+        return run(str(ROOT / "bin" / "vkterm-state"), "recent",
+                   env=dict(os.environ, VKTERM_STATE_DIR=str(state), **(project_env or {})))
+    try:
+        client, s = start_workspace([vkterm, "--here", str(alfa)], base, env, prefix="vk-alfa-")
+        if not s:
+            check("el IDE de alfa arranca", False)
+            return
+        client.send(cmd["⌘K F"], pause=1.0)
+        ended(client, s)
+        time.sleep(1.2)  # la fecha de uso va por segundos
+        client, s = start_workspace([vkterm, "--here", str(beta)], base, env, prefix="vk-beta-")
+        if not s:
+            check("el IDE de beta arranca", False)
+            return
+        rows = listed({"VKTERM_PROJECT": str(beta)}).splitlines()
+        check("vkterm-state recent: las carpetas ya abiertas, la última primero, sin la del IDE",
+              [r.split("\t")[0] for r in listed().splitlines()][:2] == [str(beta.resolve()), str(alfa.resolve())]
+              and rows == ["%s\t" % alfa.resolve()], " | ".join(rows))
+        view = open_recent(s)
+        check("⌘O en el IDE abre «Abrir reciente» con las otras carpetas (nombre y carpeta de arriba)",
+              "alfa  /" in view and "beta" not in view and "⇧Enter ventana nueva" in view,
+              " | ".join(l.strip("│ ") for l in view.splitlines()[1:3]))
+        client.send(b"zzz", pause=0.8)
+        check("… lo escrito filtra", "Ninguna carpeta coincide" in (recent_view(s) or ""))
+        client.send(ESC, pause=1.0)
+        check("… y Esc la cierra sin hacer nada",
+              wait_until(lambda: s.pane(RECENT_TITLE) is None) and s.name in sessions() and client.alive())
+        open_recent(s)
+        client.send(SHIFT_ENTER, pause=3.0)
+        check("⇧Enter llega distinto de Enter: no cierra la carpeta (abriría una ventana nueva)",
+              s.pane(RECENT_TITLE) is None and s.name in sessions() and client.alive()
+              and not any(n.startswith("vk-alfa-") for n in sessions() - before), session=s)
+
+        client.send(cmd["⌘2"], b"vk-unsaved ", pause=1.5)
+        open_recent(s)
+        client.send(ENTER, pause=1.5)
+        view = wait_until(lambda: confirm_view(s), timeout=6) or ""
+        check("Enter con un archivo sin guardar pregunta antes de cerrar la carpeta, como ⌘K F",
+              "1 archivo sin guardar" in view, " | ".join(l.strip("│ ") for l in view.splitlines()[1:3]))
+        client.send(ESC, pause=1.0)
+        check("… Cancelar deja la carpeta abierta",
+              wait_until(lambda: s.pane(CONFIRM_TITLE) is None) and s.name in sessions() and client.alive())
+        client.send(cmd["⌘K F"], pause=1.0)
+        wait_until(lambda: confirm_view(s), timeout=6)
+        client.send(RIGHT, ENTER, pause=1.0)
+        check("… y un ⌘K F después cierra sin abrir la carpeta de la lista",
+              ended(client, s) and not any(n.startswith("vk-alfa-") for n in sessions() - before))
+
+        client, s = start_workspace([vkterm, "--here", str(beta)], base, env, prefix="vk-beta-")
+        if not s:
+            check("el IDE de beta vuelve a arrancar", False)
+            return
+        open_recent(s)
+        mark = sessions()
+        client.send(ENTER, pause=1.0)
+        gone = wait_until(lambda: s.name not in sessions(), timeout=15)
+        s = ready_session(mark, prefix="vk-alfa-")
+        next_files = list(state.glob("projects/*/next"))
+        check("Enter cierra la carpeta y abre la elegida en la misma pestaña",
+              gone and s and client.alive() and not next_files, str(next_files))
+        if s:
+            client.send(cmd["⌘K F"], pause=1.0)
+            check("… y ⌘K F en ella vuelve al shell", ended(client, s))
+
+        mark = sessions()
+        client = Client([vkterm, "-r", "--here"], base, env)
+        time.sleep(2.0)
+        # La búsqueda también mira la carpeta de arriba, que es temporal y de
+        # nombre aleatorio: con «bet», alfa coincidía si su nombre tenía una b.
+        client.send(b"beta", pause=0.5)
+        client.send(ENTER, pause=1.0)
+        s = ready_session(mark, prefix="vk-beta-")
+        check("`vkterm -r` en el terminal: la lista, lo escrito filtra y Enter abre la carpeta", s)
+        if s:
+            client.send(cmd["⌘K F"], pause=1.0)
+            ended(client, s)
+    finally:
+        for created in sessions() - before:
+            run("zellij", "kill-session", created)
+
+
+# ------------------------------------------------- integración de zsh
+
+def scenario_zsh(tmp):
+    """El modo terminal de vkTERM.app: config/zsh encadenado con la integración de
+    Ghostty, con un HOME falso cuyo .zshrc usa el modo vi."""
+    print("\nIntegración de zsh del modo terminal (HOME falso)")
+    integration = GHOSTTY_APP / "Contents" / "Resources" / "ghostty" / "shell-integration" / "zsh"
+    if not integration.is_dir():
+        check("integración de zsh de Ghostty instalada", False)
+        return
+    home, fake = tmp / "zsh-home", tmp / "zsh-vkterm"
+    (fake / "bin").mkdir(parents=True)
+    home.mkdir()
+    log = tmp / "zsh.log"
+    (home / ".zshenv").write_text("print zshenv >> %s\n" % log)
+    (home / ".zshrc").write_text("bindkey -v\nPS1='vk-prompt> '\nprint zshrc >> %s\n" % log)
+    # `vkterm` y `vkterm-font` de mentira: anotan cómo los llamaron.
+    for name in ("vkterm", "vkterm-font", "vkterm-agent"):
+        (fake / "bin" / name).write_text('#!/bin/sh\necho "%s $* @ $PWD" >> %s\n' % (name, log))
+        (fake / "bin" / name).chmod(0o755)
+    project = new_project(tmp, "zsh")
+    base = {"HOME": str(home), "ZDOTDIR": str(integration), "GHOSTTY_ZSH_ZDOTDIR": str(ROOT / "config" / "zsh"),
+            "GHOSTTY_RESOURCES_DIR": str(GHOSTTY_APP / "Contents" / "Resources" / "ghostty"),
+            "VKTERM_HOME": str(fake), "TERM_PROGRAM": "ghostty"}
+    for key in ("VKTERM_USER_ZDOTDIR", "VKTERM_AUTOSTART"):
+        os.environ.pop(key, None)
+
+    def shell(extra=None):
+        client = Client(["/bin/zsh", "-i"], tmp, dict(base, **(extra or {})))
+        wait_until(lambda: "zshrc" in log.read_text(), timeout=10)
+        time.sleep(1.0)
+        return client
+
+    def logged():
+        return log.read_text() if log.exists() else ""
+    zsh = shell()
+    zsh.send(b"cd %s\r" % str(project).encode(), pause=0.8)
+    zsh.send(("print -r -- ZDOTDIR=${ZDOTDIR-unset} >> %s\r" % log).encode(), pause=0.8)
+    check("se cargan el .zshenv y el .zshrc del usuario y ZDOTDIR vuelve a su valor",
+          "zshenv\nzshrc" in logged() and "ZDOTDIR=unset" in logged(), logged().replace("\n", " ")[:120])
+    zsh.send(b"\x1b[28;9~", pause=1.5)
+    check("⌘P en el prompt (modo vi) llama a `vkterm --then quick_open .` en la carpeta",
+          wait_until(lambda: "vkterm --then quick_open . @ %s" % project in logged()), logged()[-120:])
+    zsh.send(b"\x1b[25;9~", b"\x1b[26;9~", b"\x1b[29;9~", pause=1.5)
+    check("⌘B, ⌘J y ⌘⇧P: show_sidebar, show_panel y command_palette",
+          wait_until(lambda: all("--then %s ." % a in logged()
+                                 for a in ("show_sidebar", "show_panel", "command_palette"))))
+    zsh.send(b"\x1b[31;9~", b"\x1b[32;9~", b"\x1b[33;9~", pause=1.0)
+    check("⌘+ ⌘- ⌘0 en el prompt cambian el tamaño de letra (vkterm-font size +1, -1, 0)",
+          wait_until(lambda: all("vkterm-font size %s " % a in logged() for a in ("+1", "-1", "0"))),
+          logged()[-160:])
+    calls = logged().count("vkterm ")
+    zsh.send(b"cd\r", pause=0.8)
+    zsh.send(b"\x1b[28;9~", pause=1.5)
+    check("en la carpeta personal, un atajo no convierte nada", logged().count("vkterm ") == calls)
+    zsh.send(b"\x1b[34;9~", pause=1.5)
+    check("⌘O en el prompt, también en la carpeta personal, llama a `vkterm -r` («Abrir reciente»)",
+          wait_until(lambda: "vkterm -r @ %s" % home in logged()), logged()[-120:])
+    zsh.send(b"claude --version\r", b"codex exec hola\r", pause=1.0)
+    check("claude y codex corren a través de bin/vkterm-agent (⌘V con una imagen)",
+          wait_until(lambda: all("vkterm-agent %s @" % c in logged() for c in ("claude --version", "codex exec hola"))),
+          logged()[-160:])
+    os.kill(zsh.pid, signal.SIGKILL)
+    nonce = "smoke%d" % os.getpid()
+    first = shell({"VKTERM_AUTOSTART": "%s:show_panel:%s" % (nonce, project)})
+    time.sleep(1.0)
+    second = shell({"VKTERM_AUTOSTART": "%s:show_panel:%s" % (nonce, project)})
+    time.sleep(1.0)
+    check("VKTERM_AUTOSTART convierte una sola pestaña, en la carpeta pedida",
+          logged().count("vkterm --then show_panel . @ %s" % project) == 2, logged()[-160:])
+    for client in (first, second):
+        os.kill(client.pid, signal.SIGKILL)
+    shutil.rmtree(Path(os.environ.get("TMPDIR", "/tmp")) / ("vkterm-autostart-" + nonce), ignore_errors=True)
 
 
 # ------------------------------------------------------------- escenario Ghostty
 
+def osa(script):
+    return run("osascript", "-e", script).strip()
+
+
+def app_terminal(expression):
+    """Propiedad de vkTERM Test.app por AppleScript (p. ej. "count of windows")."""
+    return osa('tell application id "%s" to get %s' % (TEST_APP_ID, expression))
+
+
+def type_in(terminal, text):
+    """Escribe una orden en una pestaña (como pegada) y pulsa Enter."""
+    osa('tell application id "%s" to input text "%s" to terminal id "%s"' % (TEST_APP_ID, text, terminal))
+    osa('tell application id "%s" to send key "enter" to terminal id "%s"' % (TEST_APP_ID, terminal))
+
+
+def surface_of(state):
+    found = next(state.glob("projects/*/surface"), None) if state.exists() else None
+    return dict(l.split("=", 1) for l in found.read_text().split()) if found else {}
+
+
 def scenario_ghostty(tmp):
-    print("\nGhostty (teclas sintetizadas con CGEvent; no son pulsaciones físicas)")
+    print("\nvkTERM Test.app (teclas sintetizadas con CGEvent; no son pulsaciones físicas)")
     if not GHOSTTY.exists() or not shutil.which("swiftc"):
         check("Ghostty y swiftc disponibles", False)
+        return
+    build = subprocess.run([str(ROOT / "bin" / "vkterm-app"), "install", "--test"], capture_output=True, text=True)
+    app = Path(run(str(ROOT / "bin" / "vkterm-app"), "path", "--test").strip())
+    check("vkTERM Test.app creada o al día (bin/vkterm-app install --test)",
+          build.returncode == 0 and app.is_dir(), (build.stdout or build.stderr).strip()[-90:])
+    if build.returncode != 0:
+        return
+    binary = app / "Contents" / "MacOS" / "ghostty"
+    if run("pgrep", "-f", str(binary)).split():
+        check("vkTERM Test.app estaba cerrada", False, "ciérrala (⌘Q) y repite la prueba")
         return
     keys_bin = tmp / "send-keys"
     subprocess.run(["swiftc", "-O", "-o", str(keys_bin), str(ROOT / "scripts" / "send-keys.swift")],
                    check=True, capture_output=True)
     project = new_project(tmp, "ghostty")
-    before, ghostty_before = sessions(), set(run("pgrep", "-x", "ghostty").split())
-    subprocess.run([str(ROOT / "bin" / "vkterm-ghostty"), "--new", str(project)], check=True,
-                   env=dict(os.environ, VKTERM_STATE_DIR=str(tmp / "ghostty-state")))
-    pid = wait_until(lambda: int(next(iter(set(run("pgrep", "-x", "ghostty").split())
-                                           - ghostty_before))), timeout=10)
-    name = wait_new_session(before, timeout=30)
-    if not (pid and name):
-        check("Ghostty abre vkTERM", False,
-              "¿falta el permiso de macOS para que Ghostty lea el disco del repositorio?")
+    git(project, "init", "-q", "-b", "main")
+    state = tmp / "ghostty-state"
+    front = frontmost_pid()
+    before = sessions()
+    # Sin la pregunta de oh-my-zsh («cd» sería «d»; ver OMZ_NO_UPDATE).
+    subprocess.run(["open", "-a", str(app), "--env", "VKTERM_STATE_DIR=%s" % state,
+                    "--env", "DISABLE_AUTO_UPDATE=" + OMZ_NO_UPDATE], check=True)
+    pid = wait_until(lambda: int(run("pgrep", "-f", str(binary)).split()[0]), timeout=15)
+    windows = pid and wait_until(lambda: app_terminal("count of windows") not in ("", "0"), timeout=5)
+    if pid and not windows:
+        # Lanzada desde un proceso en segundo plano, macOS no la activa y
+        # Ghostty no abre su ventana inicial (le pasa igual a Ghostty.app); con
+        # un clic en el Dock sí la abre (manual-tests.md, K1).
+        osa('tell application id "%s" to new window' % TEST_APP_ID)
+        windows = wait_until(lambda: app_terminal("count of windows") not in ("", "0"), timeout=10)
+    if front and front != str(pid):
+        bring_to_front(front)
+    if not (pid and windows):
+        check("vkTERM Test.app abre su ventana", False,
+              "¿falta el permiso de macOS para que vkTERM Test lea el disco del repositorio?")
         if pid:
             os.kill(pid, signal.SIGTERM)
         return
-    s = Session(name)
     try:
         args = run("ps", "-o", "command=", "-p", str(pid))
-        check("Ghostty arranca con el perfil de vkTERM y sin la config global",
+        check("la app arranca con el perfil de vkTERM y sin la config global",
               "--config-default-files=false" in args and str(PROFILE) in args)
-        check("cliente de Zellij conectado desde Ghostty",
+        terminal = app_terminal("id of focused terminal of selected tab of front window")
+        type_in(terminal, "cd %s && vkterm ." % project)
+        name = wait_new_session(before, timeout=40)
+        check("`vkterm .` en una pestaña en modo terminal la convierte en el IDE, en el sitio",
+              name and surface_of(state).get("id") == terminal and app_terminal("count of windows") == "1",
+              str(surface_of(state)))
+        if not name:
+            return
+        s = Session(name)
+        check("cliente de Zellij conectado desde la pestaña",
               wait_until(lambda: len(s.action("list-clients").splitlines()) == 2, timeout=10))
         if not check_workspace(s):
             return
-        keyboard_ghostty(s, GhosttyKeys(keys_bin, pid), project, pid)
+        keys = GhosttyKeys(keys_bin, pid)
+        keyboard_ghostty(s, keys, project, pid)
+        fonts_ghostty(s, keys, state)
+        terminal_mode_ghostty(s, keys, project, pid, terminal, state, tmp)
     finally:
-        run("zellij", "kill-session", name)
+        for created in sessions() - before:
+            run("zellij", "kill-session", created)
+        # SIGTERM y no «quit»: Ghostty pregunta antes de salir si queda algún
+        # proceso en marcha, y el diálogo bloquearía AppleScript.
+        time.sleep(1.0)
+        os.kill(pid, signal.SIGTERM)
         if not wait_until(lambda: not pid_alive(pid), timeout=10):
-            os.kill(pid, signal.SIGTERM)
+            os.kill(pid, signal.SIGKILL)
+        # bin/vkterm deja `vkterm-surface settle` para 3 s después de cerrar la
+        # carpeta: con la app ya cerrada, su AppleScript no debe volver a abrirla.
+        time.sleep(4.5)
+        again = run("pgrep", "-f", str(binary)).split()
+        check("salir de la app justo después de cerrar una carpeta no la vuelve a abrir", not again)
+        for leftover in again:
+            os.kill(int(leftover), signal.SIGTERM)
 
 
 def keyboard_ghostty(s, keys, project, pid):
@@ -1070,6 +1862,24 @@ def keyboard_ghostty(s, keys, project, pid):
     keys.send("text:focoalshell", "enter", pause=1.2)
     check("⌘⇧P abre la paleta de comandos y «Ver: Foco al Shell» se ejecuta",
           commands and wait_until(lambda: s.pane(COMMANDS_TITLE) is None and s.focused() == "Shell"), session=s)
+    windows = app_terminal("count of windows")
+    keys.send("cmd+n", pause=1.0)
+    prompt = wait_until(lambda: (p := s.pane(NEWFILE_TITLE)) and p["is_floating"] and p["is_focused"])
+    keys.send("esc", pause=1.0)
+    check("⌘N abre «Nuevo archivo» y no una ventana (el menú de Ghostty no se queda el atajo)",
+          prompt and app_terminal("count of windows") == windows
+          and wait_until(lambda: s.pane(NEWFILE_TITLE) is None), "ventanas: %s" % app_terminal("count of windows"), s)
+    # Control de código fuente (el proyecto es un repositorio sin commits).
+    # Si el menú de Ghostty se quedara ⌘Enter (pantalla completa), el commit
+    # no llegaría: sin mensaje, la vista avisa en su pie.
+    keys.send("ctrl+shift+g", pause=1.5)
+    scm_view = lambda: (p := s.pane(SCM_TITLE)) and s.plugin_view(pane_id(p)) or ""
+    opened = wait_until(lambda: s.focused() == SCM_TITLE and "⎇ main" in scm_view(), timeout=8)
+    keys.send("cmd+enter", pause=1.0)
+    check("⌃⇧G abre Control de código fuente y ⌘Enter llega al commit (no a la pantalla completa)",
+          opened and wait_until(lambda: "Escribe el mensaje del commit" in scm_view()), session=s)
+    keys.send("cmd+shift+e", pause=1.0)
+    check("⌘⇧E vuelve al explorador", wait_until(lambda: s.focused() == "Explorador"), session=s)
 
     clipboard = run("osascript", "-e", "clipboard info")
     text = run("pbpaste")
@@ -1079,17 +1889,20 @@ def keyboard_ghostty(s, keys, project, pid):
         # Se pega en una pestaña vacía que se cierra sin guardar; la comparación
         # es en memoria y el contenido no se muestra. ⌘← lleva la vista al
         # principio de la última línea pegada. La pestaña vacía la abre el
-        # comando «Archivo: Nuevo archivo» de la paleta (⌘⇧P).
+        # comando «Archivo: Nuevo archivo de texto sin título» de la paleta (⌘⇧P).
         keys.send("cmd+shift+p", pause=1.0)
-        keys.send("text:nuevoarchivo", "enter", pause=1.0)
+        keys.send("text:textosin", "enter", pause=1.0)
         keys.send("cmd+v", pause=1.2)
         keys.send("cmd+left", pause=0.6)
         check("⌘V pega el portapapeles en Micro",
               wait_until(lambda: micro_status(s).startswith("No name +") and sample in s.screen("Editor"),
                          timeout=4), "contenido no mostrado")
-        keys.send("ctrl+q", pause=0.6)
-        # Solo si Micro pregunta: si la pestaña no cambió, Ctrl-Q ya la cerró y
-        # la "n" se escribiría en Header.tsx.
+        # Se cierra con ⌘W, como en VS Code. Con Ctrl-Q sintetizado, Ghostty
+        # duplica a veces la tecla siguiente y la "n" de la respuesta acababa
+        # también en Header.tsx (manual-tests.md, C9).
+        keys.send("cmd+w", pause=0.6)
+        # Solo si Micro pregunta: si la pestaña no cambió, ⌘W ya la cerró y la
+        # "n" se escribiría en Header.tsx.
         if wait_until(lambda: "Save changes" in s.screen("Editor"), timeout=3):
             keys.send("text:n", pause=0.8)
         # "+" tras el nombre: Header.tsx modificado.
@@ -1130,15 +1943,24 @@ def keyboard_ghostty(s, keys, project, pid):
     front = frontmost_pid()
     bring_to_front(pid)
     time.sleep(0.8)
+    # macOS no deja que un proceso en segundo plano active otra app (por
+    # ejemplo, si quien está al frente es otra y no hay nadie delante): sin la
+    # ventana principal, ⌃Tab no llega y la comprobación se omite.
+    activated = frontmost_pid() == str(pid)
     keys.send("ctrl+tab", pause=0.6)
     tab = wait_until(lambda: micro_status(s).startswith(DEMO_FILE + " "), timeout=3)
     keys.send("ctrl+shift+tab", pause=0.6)
     shift_tab = wait_until(lambda: micro_status(s).startswith("src/App.tsx "), timeout=3)
     if front and front != str(pid):
         bring_to_front(front)
-    check("⌘⌥← / ⌘⌥→ y ⌃Tab / ⌃⇧Tab cambian de pestaña",
-          previous and following and tab and shift_tab,
-          f"⌘⌥←={previous} ⌘⌥→={following} ⌃Tab={tab} ⌃⇧Tab={shift_tab}: {micro_status(s)[:40]}")
+    check("⌘⌥← / ⌘⌥→ cambian de pestaña", previous and following,
+          f"⌘⌥←={previous} ⌘⌥→={following}: {micro_status(s)[:40]}")
+    if activated:
+        check("⌃Tab / ⌃⇧Tab cambian de pestaña", tab and shift_tab,
+              f"⌃Tab={tab} ⌃⇧Tab={shift_tab}: {micro_status(s)[:40]}")
+    else:
+        check("⌃Tab / ⌃⇧Tab (omitido: macOS no dejó traer la app al frente)", True)
+        wait_until(lambda: micro_status(s).startswith("src/App.tsx "), timeout=1)
     keys.send("cmd+lopt+left", pause=0.6)
     wait_until(lambda: micro_status(s).startswith(DEMO_FILE + " "), timeout=3)
 
@@ -1191,6 +2013,382 @@ def keyboard_ghostty(s, keys, project, pid):
           "%s → %s → %s" % (start, word, column()))
 
 
+def size_keys():
+    """⌘+ y ⌘- con la distribución de teclado activa: en la española, + y -
+    están donde en la de EE. UU. van ] y /."""
+    source = run("defaults", "read", "com.apple.HIToolbox", "AppleCurrentKeyboardLayoutInputSourceID")
+    return ("cmd+rightbracket", "cmd+slash") if "Spanish" in source else ("cmd+equal", "cmd+minus")
+
+
+def fonts_ghostty(s, keys, state):
+    print("Fuente y tamaño de letra en Ghostty")
+    keys.send("cmd+2", pause=0.6)
+    keys.send("cmd+k", "cmd+l", pause=1.5)
+    opened = wait_until(lambda: (p := s.pane(FONTS_TITLE)) and p["is_floating"] and p["is_focused"])
+    keys.send("esc", pause=1.0)
+    check("⌘K ⌘L abre el selector de fuentes y Esc lo cierra",
+          opened and wait_until(lambda: s.pane(FONTS_TITLE) is None and s.focused() == "Editor"), session=s)
+    font_file = state / "font.ghostty"
+
+    def size():
+        found = font_file.exists() and re.findall(r"^font-size = (\d+)$", font_file.read_text(), re.M)
+        return found[-1] if found else "13"
+    plus, minus = size_keys()
+    before = s.geometry()
+    keys.send(plus, pause=1.0)
+    saved = wait_until(lambda: size() == "14", timeout=6)
+    # La letra más grande en esta ventana: menos columnas para el IDE. Si el
+    # menú de Ghostty se quedara ⌘+, el archivo no cambiaría.
+    applied = wait_until(lambda: s.geometry() != before, timeout=5)
+    keys.send(minus, pause=1.0)
+    smaller = wait_until(lambda: size() == "13", timeout=6)
+    keys.send(plus, pause=0.3)
+    keys.send(plus, pause=0.3)
+    quick = wait_until(lambda: size() == "15", timeout=6)
+    keys.send("cmd+0", pause=1.0)
+    reset = wait_until(lambda: size() == "13" and s.geometry() == before, timeout=6)
+    check("⌘+ ⌘- ⌘0 llegan al IDE: cambia la letra de la ventana y el tamaño se guarda (no los resuelve el menú)",
+          saved and applied and smaller and reset,
+          "guardado=%s aplicado=%s tamaño=%s" % (bool(saved), bool(applied), size()), s)
+    check("dos ⌘+ seguidos no se pierden (el tamaño no recarga Ghostty)", quick, size())
+
+
+# Activa el protocolo de teclado de kitty y el bracketed paste, guarda lo que
+# recibe durante unos segundos y los desactiva.
+KITTY_RECORDER = r'''
+import os, select, sys, termios, time, tty
+out, seconds = sys.argv[1], float(sys.argv[2])
+saved = termios.tcgetattr(0)
+tty.setraw(0)
+os.write(1, b"\x1b[?2004h\x1b[>1u")
+data, end = b"", time.time() + seconds
+try:
+    while time.time() < end:
+        if select.select([0], [], [], 0.1)[0]:
+            data += os.read(0, 4096)
+finally:
+    os.write(1, b"\x1b[?2004l\x1b[<u")
+    termios.tcsetattr(0, termios.TCSADRAIN, saved)
+open(out, "wb").write(data)
+'''
+
+
+def terminal_mode_ghostty(s, keys, project, pid, terminal, state, tmp):
+    print("Modo terminal ⇄ modo IDE")
+    keys.send("cmd+k", "f", pause=1.5)
+    title = lambda: app_terminal('name of terminal id "%s"' % terminal)
+    check("⌘K F vuelve al shell de antes: sin sesión ni modo IDE",
+          wait_until(lambda: s.name not in sessions() and not surface_of(state), timeout=10)
+          and wait_until(lambda: s.name not in title(), timeout=5), title())
+    font_file = state / "font.ghostty"
+    size = lambda: (re.findall(r"^font-size = (\d+)$", font_file.read_text(), re.M) or ["13"])[-1] \
+        if font_file.exists() else "13"
+    plus, _ = size_keys()
+    keys.send(plus, pause=2.5)
+    bigger = wait_until(lambda: size() == "14", timeout=6)
+    keys.send("cmd+0", pause=2.5)
+    check("⌘+ y ⌘0 en el prompt del modo terminal cambian el tamaño que se recuerda",
+          bigger and wait_until(lambda: size() == "13", timeout=6), size())
+    # Una orden detrás de bin/vkterm-agent con el protocolo de teclado de kitty,
+    # como Claude Code y Codex. Se pega el portapapeles del usuario, pero solo
+    # se mira la forma de lo recibido.
+    recorder, received = tmp / "kitty-recorder.py", tmp / "kitty-received"
+    recorder.write_text(KITTY_RECORDER)
+    type_in(terminal, "%s python3 -I %s %s 4" % (ROOT / "bin" / "vkterm-agent", recorder, received))
+    time.sleep(1.5)
+    keys.send("cmd+v", pause=0.5)
+    data = wait_until(lambda: received.read_bytes() if received.exists() else None, timeout=8) or b""
+    check("⌘V con bin/vkterm-agent: llega el texto pegado o, si solo hay una imagen, ⌃V",
+          (data.startswith(b"\x1b[200~") and data.endswith(b"\x1b[201~")) or data == b"\x16",
+          "%d bytes" % len(data))
+    before = sessions()
+    keys.send("cmd+p", pause=1.0)
+    name = wait_new_session(before, timeout=40)
+    s = Session(name) if name else s
+    palette = name and wait_until(lambda: (p := s.pane(FILES_TITLE)) and p["is_floating"] and p["is_focused"],
+                                  timeout=20)
+    check("⌘P en el prompt convierte la pestaña y abre la búsqueda de archivos", palette, session=s)
+    if not name:
+        return
+    keys.send("esc", pause=1.0)
+    tabs = app_terminal("count of tabs of front window")
+    keys.send("cmd+t", pause=2.0)
+    new = app_terminal("id of focused terminal of selected tab of front window")
+    cwd = wait_until(lambda: app_terminal('working directory of terminal id "%s"' % new), timeout=5) or ""
+    check("⌘T en el IDE abre una pestaña de Ghostty en modo terminal, en la carpeta del proyecto",
+          app_terminal("count of tabs of front window") == str(int(tabs) + 1) and new != terminal
+          and os.path.realpath(cwd) == os.path.realpath(project), cwd)
+    keys.send("cmd+w", pause=2.0)
+    check("⌘W en esa pestaña (modo terminal) la cierra, como Ghostty",
+          app_terminal("count of tabs of front window") == tabs and s.name in sessions())
+    osa('tell application id "%s" to focus terminal id "%s"' % (TEST_APP_ID, terminal))
+    front = frontmost_pid()
+    if front and front != str(pid):
+        bring_to_front(front)
+    time.sleep(0.8)
+    keys.send("cmd+shift+comma", pause=3.5)
+    keys.send("cmd+b", pause=1.0)
+    hidden = wait_until(lambda: s.hidden() == {"Explorador"}, timeout=3)
+    keys.send("cmd+b", pause=1.0)
+    check("tras recargar la configuración (⌘⇧,), la pestaña sigue en modo IDE", hidden, session=s)
+    # Como desde iTerm: fuera de vkTERM.app (VKTERM_APP_ID solo elige la app de pruebas).
+    env = dict(os.environ, VKTERM_APP_ID=TEST_APP_ID, VKTERM_STATE_DIR=str(state), TERM_PROGRAM="iTerm.app")
+    env.pop("ZELLIJ", None)
+    before = sessions()
+    subprocess.run([str(ROOT / "bin" / "vkterm"), str(project)], env=env, timeout=30)
+    time.sleep(1.5)
+    check("`vkterm` sobre la misma carpeta desde otro terminal enfoca su pestaña",
+          sessions() == before and app_terminal("count of windows") == "1")
+    other = new_project(tmp, "ghostty-otra")
+    subprocess.run([str(ROOT / "bin" / "vkterm"), str(other)], env=env, timeout=30)
+    if front and front != str(pid):
+        bring_to_front(front)
+    fresh = wait_new_session(before, timeout=40)
+    check("`vkterm OTRA` desde otro terminal abre una ventana nueva ya convertida",
+          fresh and app_terminal("count of windows") == "2", fresh or "")
+    if fresh:
+        window = app_terminal("id of front window")
+        osa('tell application id "%s" to close window (window id "%s")' % (TEST_APP_ID, window))
+        gone = wait_until(lambda: fresh not in sessions(), timeout=6)
+        if not gone:
+            # Si Ghostty pregunta (Close Window?), Enter acepta. Solo si sigue
+            # abierta: si no, Enter llegaría al editor de la otra ventana.
+            bring_to_front(pid)
+            time.sleep(0.8)
+            keys.send("enter", pause=1.0)
+            if front and front != str(pid):
+                bring_to_front(front)
+            gone = wait_until(lambda: fresh not in sessions(), timeout=15)
+        check("cerrar la ventana del IDE termina su sesión", gone)
+    # «Traer el IDE aquí»: `vkterm .` en otra ventana se trae el IDE de la
+    # carpeta con sus procesos, y la pestaña de antes vuelve a su shell.
+    micro = next((c["pid"] for c in server_children(s.name) if c["command"].startswith("micro")), None)
+    osa('tell application id "%s" to new window' % TEST_APP_ID)
+    big = wait_until(lambda: (t := app_terminal("id of focused terminal of selected tab of front window"))
+                     not in ("", terminal) and t, timeout=5)
+    if big:
+        type_in(big, "cd %s && vkterm ." % project)
+    moved = big and wait_until(lambda: surface_of(state).get("id") == big, timeout=25)
+    check("`vkterm .` en otra ventana se trae el IDE abierto: la misma sesión, con el mismo Micro",
+          moved and s.name in sessions() and surface_of(state).get("session") == s.name
+          and micro and pid_alive(micro)
+          and wait_until(lambda: len(s.action("list-clients").splitlines()) == 2, timeout=5),
+          str(surface_of(state)))
+    check("… y la pestaña de antes vuelve a su shell",
+          moved and wait_until(lambda: s.name not in title(), timeout=5), title())
+    if moved:
+        terminal = big
+    # Al cerrar una ventana con la app en segundo plano, la otra no pasa a ser
+    # la activa: se enfoca su pestaña.
+    osa('tell application id "%s" to focus terminal id "%s"' % (TEST_APP_ID, terminal))
+    if front and front != str(pid):
+        bring_to_front(front)
+    time.sleep(0.8)
+    keys.send("cmd+k", "f", pause=1.5)
+    check("⌘K F cierra la última carpeta", wait_until(lambda: s.name not in sessions(), timeout=10))
+
+
+# ------------------------------------------------- Control de código fuente
+
+def git(project, *args):
+    return subprocess.run(["git", "-C", str(project), *args], capture_output=True, text=True, timeout=30)
+
+
+def scm_repo(base):
+    """Repositorio con la rama `rama` y `main` cambiando la misma línea de
+    src/App.tsx (chocarían al fusionar), un cambio sin preparar, un archivo
+    nuevo y uno ignorado."""
+    project = base / "repo"
+    shutil.copytree(ROOT / "examples" / "demo", project)
+    env = ["-c", "user.name=vkTERM", "-c", "user.email=smoke@vkterm", "-c", "commit.gpgsign=false"]
+    git(project, "init", "-q", "-b", "main")
+    (project / ".gitignore").write_text("build/\n")
+    git(project, "add", "-A")
+    git(project, *env, "commit", "-q", "-m", "inicio")
+    git(project, "checkout", "-q", "-b", "rama")
+    app = project / "src" / "App.tsx"
+    app.write_text(app.read_text().replace("vkTERM demo", "demo de la rama"))
+    git(project, *env, "commit", "-q", "-am", "título de la rama")
+    git(project, "checkout", "-q", "main")
+    app.write_text(app.read_text().replace("vkTERM demo", "demo de main"))
+    git(project, *env, "commit", "-q", "-am", "título de main")
+    git(project, "checkout", "-q", "rama")
+    for key, value in (("user.name", "vkTERM"), ("user.email", "smoke@vkterm"), ("commit.gpgsign", "false")):
+        git(project, "config", key, value)
+    header = project / DEMO_FILE
+    header.write_text(header.read_text() + "\n// cambio sin preparar\n")
+    (project / "nuevo.txt").write_text("contenido nuevo\n")
+    (project / "build").mkdir()
+    (project / "build" / "salida.js").write_text("x\n")
+    return project
+
+
+def scenario_scm(cmd, tmp):
+    print("\nControl de código fuente (⌃⇧G), colores de git y conflictos entre ramas")
+    base = tmp / "scm"
+    base.mkdir()
+    project = scm_repo(base)
+    before = sessions()
+    ui = DEFAULT_THEME["ui"]
+
+    def view(ansi=False):
+        pane = s.pane(SCM_TITLE)
+        return s.plugin_view(pane_id(pane), ansi) if pane else ""
+
+    def row(text, lines=None):
+        """La fila de la vista que contiene `text`."""
+        return next((l.rstrip() for l in (lines or view()).splitlines() if text in l), "")
+
+    def window(title):
+        return wait_until(lambda: (p := s.pane(title)) and p["is_floating"] and p["is_focused"] and p)
+
+    def staged():
+        return set(git(project, "diff", "--cached", "--name-only").stdout.split())
+
+    def last_commit():
+        return git(project, "log", "-1", "--format=%s").stdout.strip()
+
+    client, s = start_workspace([str(ROOT / "bin" / "vkterm"), "--here", str(project)], base, prefix="vk-repo-")
+    if not s:
+        check("el IDE del repositorio arranca", False)
+        return
+    try:
+        # Explorador: colores y letras de git, como VS Code.
+        tree = wait_until(lambda: (lambda v: "nuevo.txt" in v and v.split("\n"))("\n".join(s.explorer())))
+        line = lambda name: next((l for l in tree or [] if l.strip().startswith(name)), "")
+        check("explorador: archivo nuevo con U, carpeta con cambios con •, ignorado sin letra",
+              line("nuevo.txt").endswith(" U") and line("▸ src").endswith(" •")
+              and line("▸ build").strip() == "▸ build", " | ".join(l.strip() for l in (tree or [])[:6]))
+        colored = s.plugin_view(pane_id(s.pane("Explorador")), ansi=True)
+        check("explorador: en los colores de git del tema (gitDecoration.*)",
+              all(background_sgr(ui[k]).replace("48;", "38;") in colored
+                  for k in ("git_untracked", "git_modified", "git_ignored")))
+        bar = s.plugin_view(pane_id(s.status_bar()))
+        check("barra de estado: rama con cambios (*) y el aviso de conflictos con main",
+              wait_until(lambda: (b := s.plugin_view(pane_id(s.status_bar()))) and "⎇ rama*" in b
+                         and "⚠ 1 conflicto con main" in b), bar.strip()[:120])
+
+        client.send(cmd["⌃⇧G"], pause=1.0)
+        opened = wait_until(lambda: (p := s.pane(SCM_TITLE)) and p["is_focused"] and not p["is_floating"])
+        check("⌃⇧G cambia la barra lateral a Control de código fuente, con el foco", opened, session=s)
+        v = wait_until(lambda: (v := view()) and "CONFLICTOS CON main" in v and v) or view()
+        check("cabecera con la rama y grupo CAMBIOS con sus letras",
+              "⎇ rama" in v and "CAMBIOS" in row("CAMBIOS", v) and row("nuevo.txt", v).endswith(" U")
+              and row("Header.tsx", v).endswith(" M") and row(".gitignore", v) == "",
+              " | ".join(l.strip() for l in v.splitlines()[:8]))
+        check("conflictos con main antes de fusionar: aviso y el archivo que chocaría",
+              "⚠ main" in row("⚠ main", v) and "1 conflicto" in row("⚠ main", v)
+              and row("App.tsx", v).endswith(" !"), row("⚠ main", v).strip())
+        colored = view(ansi=True)
+        check("la vista usa los colores de git del tema",
+              all(background_sgr(ui[k]).replace("48;", "38;") in colored for k in ("git_untracked", "git_conflicting")))
+
+        def go(text):
+            """⌃⇧G (el foco va al mensaje) y ↓ hasta la fila con `text`."""
+            client.send(cmd["⌃⇧G"], pause=0.8)
+            rows = view().splitlines()
+            message = next((i for i, l in enumerate(rows) if "›" in l), None)
+            target = next((i for i, l in enumerate(rows) if text in l), None)
+            if message is None or target is None or target < message:
+                return False
+            client.send(*([DOWN] * (target - message)), pause=0.25)
+            return True
+
+        moved = go("App.tsx")
+        client.send(ENTER, pause=1.5)
+        diff = window("Conflicto al fusionar main: src/App.tsx")
+        screen = wait_until(lambda: (sc := s.screen(diff)) and "<<<<<<< HEAD" in sc and "demo de main" in sc
+                            and sc) if diff else ""
+        client.send(b"q", pause=1.5)
+        check("Enter en el archivo que chocaría muestra el conflicto con sus marcas (<<<<<<<), sin fusionar",
+              moved and screen and not (project / ".git" / "MERGE_HEAD").exists()
+              and "demo de la rama" in (project / "src" / "App.tsx").read_text(), session=s)
+
+        moved = go("Header.tsx")
+        client.send(SPACE, pause=0.6)
+        check("Espacio prepara el archivo (git add) y aparece en CAMBIOS PREPARADOS",
+              moved and wait_until(lambda: staged() == {DEMO_FILE} and "CAMBIOS PREPARADOS" in view()),
+              str(staged()))
+        moved = go("nuevo.txt")
+        client.send(ENTER, pause=1.5)
+        diff = window("Archivo nuevo: nuevo.txt")
+        screen = wait_until(lambda: (sc := s.screen(diff)) and "contenido nuevo" in sc and sc) if diff else ""
+        check("Enter muestra las diferencias en una ventana flotante (paginador de git)",
+              moved and diff and screen, (diff or {}).get("title", "sin ventana"))
+        client.send(b"q", pause=1.5)
+        check("q cierra la ventana y el foco vuelve a la vista",
+              wait_until(lambda: not any(p["is_floating"] for p in s.panes()) and s.focused() == SCM_TITLE),
+              session=s)
+        moved = go("Header.tsx")
+        client.send(ENTER, pause=1.5)
+        diff = window("Diferencias (preparado): %s" % DEMO_FILE)
+        screen = wait_until(lambda: (sc := s.screen(diff)) and "cambio sin preparar" in sc and sc) if diff else ""
+        client.send(b"q", pause=1.5)
+        check("y las de un archivo preparado (git diff --cached)", moved and diff and screen, session=s)
+
+        # Borrar el archivo nuevo, con confirmación.
+        moved = go("nuevo.txt")
+        client.send(b"\x7f", pause=1.0)
+        question = window("Borrar archivo")
+        client.send(ENTER, pause=1.0)
+        check("⌫ en un archivo nuevo pregunta y lo borra",
+              moved and question and wait_until(lambda: not (project / "nuevo.txt").exists()), session=s)
+
+        # Commit con Enter en el mensaje.
+        client.send(cmd["⌃⇧G"], pause=0.8)
+        client.send(b"primer commit", ENTER, pause=1.5)
+        check("Enter en el mensaje hace commit de lo preparado",
+              wait_until(lambda: last_commit() == "primer commit" and not staged()), last_commit())
+        check("el mensaje se vacía después del commit",
+              wait_until(lambda: "Mensaje (Enter: commit en «rama»)" in view()), row("›").strip())
+        # Sin nada preparado: pregunta si preparar todo.
+        header = project / DEMO_FILE
+        header.write_text(header.read_text() + "// otro cambio\n")
+        wait_until(lambda: row("Header.tsx").endswith(" M"))
+        client.send(cmd["⌃⇧G"], pause=0.8)
+        client.send(b"con todo", cmd["⌘Enter"], pause=1.2)
+        question = window("Commit")
+        qview = s.plugin_view(pane_id(question)) if question else ""
+        client.send(ENTER, pause=1.5)
+        check("⌘Enter sin nada preparado pregunta «¿Preparar todos los cambios…?» y hace el commit",
+              "Preparar todo y hacer commit" in qview
+              and wait_until(lambda: last_commit() == "con todo" and not git(project, "status", "--porcelain").stdout.strip()),
+              last_commit())
+
+        # Otra rama con la que comparar.
+        client.send(cmd["⌃⇧G"], DOWN, ENTER, pause=1.2)
+        picker = window(BRANCHES_TITLE)
+        pview = wait_until(lambda: (v := s.plugin_view(pane_id(picker))) and "ramas locales" in v and v) if picker else ""
+        client.send(ESC, pause=0.8)
+        check("Enter en la comparación abre la lista de ramas (locales)",
+              pview and "main" in pview and "rama" in pview, (pview or "").strip()[:80])
+
+        # Fusión en curso con conflictos.
+        git(project, "merge", "main")
+        # git escribe el índice con los conflictos antes que MERGE_HEAD: la
+        # vista puede leer el estado entre medias y completarlo en la siguiente.
+        v = wait_until(lambda: (v := view()) and "CONFLICTOS DE FUSIÓN" in v and "fusión en curso" in v
+                       and "Merge branch" in v and v, timeout=10) or view()
+        check("fusión con conflictos: grupo CONFLICTOS DE FUSIÓN, ! y «fusión en curso»",
+              row("App.tsx", v).endswith(" !") and "fusión en curso" in v, " | ".join(l.strip() for l in v.splitlines()[:6]))
+        check("el mensaje propone el de git (Merge branch 'main'…)", "Merge branch 'main'" in row("›", v), row("›", v).strip())
+        check("barra de estado: ⚠ fusión: 1 conflicto",
+              wait_until(lambda: "⚠ fusión: 1 conflicto" in s.plugin_view(pane_id(s.status_bar()))))
+        client.send(cmd["⌘⇧P"], pause=1.0)
+        client.send(b"abortar la fus", ENTER, pause=1.5)
+        question = window("Abortar la fusión")
+        client.send(ENTER, pause=1.5)
+        check("«Git: Abortar la fusión» pregunta y la aborta",
+              question and wait_until(lambda: not (project / ".git" / "MERGE_HEAD").exists()), session=s)
+
+        client.send(cmd["⌘⇧E"], pause=1.0)
+        check("⌘⇧E vuelve al explorador", wait_until(lambda: s.focused() == "Explorador"), session=s)
+        check("no deja paneles de más", wait_until(lambda: len(s.panes()) == len(TITLES)), session=s)
+    finally:
+        for created in sessions() - before:
+            run("zellij", "kill-session", created)
+
+
 def main():
     if os.environ.get("ZELLIJ"):
         sys.exit("smoke-test: ejecútalo fuera de Zellij.")
@@ -1202,6 +2400,10 @@ def main():
     try:
         cmd = check_config()
         scenario_pty(cmd, tmp)
+        scenario_memory(cmd, tmp)
+        scenario_recent(cmd, tmp)
+        scenario_scm(cmd, tmp)
+        scenario_zsh(tmp)
         if "--ghostty" in sys.argv[1:]:
             scenario_ghostty(tmp)
     finally:
