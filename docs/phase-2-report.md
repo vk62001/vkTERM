@@ -8,7 +8,7 @@ teclado Spanish - ISO.
 | P — Pegar imágenes en Claude Code y Codex | Entregado el 22-10-2026 |
 | H0 — Prueba técnica del LSP | **Sí: mlsp sirve.** Entregado el 22-10-2026 |
 | H1 — LSP en el editor | Siguiente |
-| H2 — Control de código fuente | Pendiente |
+| H2 — Control de código fuente | Adelantado a petición del usuario y entregado el 03-11-2026 (sin publicar; detalle en [next-steps.md](next-steps.md) y [architecture.md](architecture.md)) |
 | H3 — Extensiones de terceros | Pendiente |
 
 ## P — Pegar imágenes en Claude Code y Codex

@@ -1,0 +1,22 @@
+# Abyss. Generado por scripts/gen-themes.py: no editar.
+background = #000c18
+foreground = #6688cc
+cursor-color = #ddbb88
+cursor-text = #000c18
+selection-background = #770811
+palette = 0=#111111
+palette = 1=#ff9da4
+palette = 2=#d1f1a9
+palette = 3=#ffeead
+palette = 4=#bbdaff
+palette = 5=#ebbbff
+palette = 6=#99ffff
+palette = 7=#cccccc
+palette = 8=#333333
+palette = 9=#ff7882
+palette = 10=#b8f171
+palette = 11=#ffe580
+palette = 12=#80baff
+palette = 13=#d778ff
+palette = 14=#78ffff
+palette = 15=#ffffff

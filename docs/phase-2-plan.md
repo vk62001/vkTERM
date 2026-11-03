@@ -1,7 +1,9 @@
 # vkTERM — Fase 2: lenguajes (LSP), Control de código fuente y extensiones
 
 Estado: **aprobado el 22-10-2026.** P y H0 entregados el mismo día
-([informe](phase-2-report.md)). Siguiente: H1.
+([informe](phase-2-report.md)). H2 se adelantó a petición del usuario y se
+entregó el 03-11-2026, con un añadido: avisar de los conflictos que habría al
+fusionar otra rama, antes de fusionar. Siguiente: H1.
 
 ## Contexto
 

@@ -1,0 +1,274 @@
+#!/usr/bin/env -S python3 -I
+# vkTERM — «Abrir reciente» (⌘O) en el modo terminal, como «File: Open
+# Recent» de VS Code: las carpetas que ya se abrieron en vkTERM, la última
+# usada primero (bin/vkterm-state recent). Lo escrito filtra.
+#
+#   vkterm-recent [--window]
+#
+# Escribe lo elegido en la salida estándar: "here<tab>RUTA" con Enter (en esta
+# pestaña) o "window<tab>RUTA" con ⇧Enter (en una ventana nueva). Con
+# --window, Enter también abre una ventana nueva: bin/vkterm lo pide cuando no
+# puede convertir la pestaña (otro terminal, el Shell del IDE). Esc, ⌃C o ⌘O
+# cancelan (código 1). Lo ejecuta bin/vkterm (`vkterm -r`).
+#
+# Dibuja la lista debajo del prompt, en /dev/tty (como fzf --height), y la
+# borra al salir. Mientras se ve, activa el protocolo de teclado de kitty: con
+# él, Ghostty envía ⇧Enter distinto de Enter, y Esc sin ambigüedad.
+import codecs
+import os
+import re
+import select
+import subprocess
+import sys
+import termios
+import tty
+from pathlib import Path
+
+STATE = Path(__file__).resolve().parent / "vkterm-state"
+PLACEHOLDER = "Escribe para filtrar las carpetas"
+HINT = "Enter abrir aquí · ⇧Enter ventana nueva · Esc cancelar"
+HINT_WINDOW = "Enter abrir en una ventana nueva · Esc cancelar"
+MISSING = "Esa carpeta ya no existe (¿está conectado su disco?)"
+LIST_ROWS = 10
+MARKS = {"open": "abierta", "missing": "no disponible"}
+# Cuánto se espera al resto de una secuencia de escape partida en dos lecturas.
+HOLD = 0.03
+# Teclas, en el modo clásico y en el protocolo de kitty (flag 1). ⇧Enter (y
+# ⌥Enter, si llega como Alt) abren en una ventana nueva. Esc solo, en el modo
+# clásico, es un ESC al que no sigue nada (run).
+KEYS = {
+    b"\r": "enter", b"\n": "enter", b"\x1b[13;2u": "window", b"\x1b[13;3u": "window",
+    b"\x7f": "backspace", b"\x08": "backspace",
+    b"\x1b[A": "up", b"\x1bOA": "up", b"\x10": "up", b"\x1b[112;5u": "up",
+    b"\x1b[B": "down", b"\x1bOB": "down", b"\x0e": "down", b"\x1b[110;5u": "down",
+    b"\x1b[5~": "pageup", b"\x1b[6~": "pagedown",
+    b"\x15": "clear", b"\x1b[117;5u": "clear",
+    b"\x1b[27u": "cancel", b"\x03": "cancel", b"\x1b[99;5u": "cancel",
+    # ⌘O otra vez (F20 con Super, config/ghostty/vkterm.ghostty).
+    b"\x1b[34;9~": "cancel",
+}
+CSI = re.compile(rb"\x1b\[[0-9;:?<>=]*[ -/]*[@-~]")
+PARTIAL_CSI = re.compile(rb"\x1b(\[[0-9;:?<>=]*[ -/]*|O)?\Z")
+
+
+def load():
+    """[(ruta, marca)] de bin/vkterm-state recent."""
+    out = subprocess.run([str(STATE), "recent"], capture_output=True, text=True).stdout
+    folders = []
+    for line in out.splitlines():
+        path, _, mark = line.partition("\t")
+        if path:
+            folders.append((path, mark))
+    return folders
+
+
+def label(path, home):
+    """("nombre", "carpeta de arriba"), con ~ por la carpeta personal."""
+    shown = "~" + path[len(home):] if home and (path == home or path.startswith(home + "/")) else path
+    if shown in ("/", "~"):
+        return shown, ""
+    parent, _, name = shown.rpartition("/")
+    return name, parent or "/"
+
+
+def match(query, text):
+    """Búsqueda difusa: posiciones de `text` con las letras de `query` en
+    orden (sin distinguir mayúsculas; los espacios no cuentan), o None."""
+    found, start = [], 0
+    lowered = text.lower()
+    for ch in query.lower().replace(" ", ""):
+        at = lowered.find(ch, start)
+        if at < 0:
+            return None
+        found.append(at)
+        start = at + 1
+    return found
+
+
+def parse_keys(data, decoder):
+    """Bytes del teclado → ([(nombre, texto)], lo que falta de una secuencia
+    partida). Lo escrito llega como ("text", carácter)."""
+    keys, i = [], 0
+    while i < len(data):
+        if data[i] == 0x1b:
+            m = CSI.match(data, i)
+            if m:
+                keys.append((KEYS.get(m.group(), "ignore"), ""))
+                i = m.end()
+                continue
+            if PARTIAL_CSI.match(data, i):
+                return keys, data[i:]
+            if data[i + 1:i + 2] == b"O":
+                keys.append((KEYS.get(data[i:i + 3], "ignore"), ""))
+                i += 3
+                continue
+            # ESC y una tecla (Alt+tecla en el modo clásico): no se usa.
+            i += 2
+            continue
+        if data[i] < 0x20 or data[i] == 0x7f:
+            keys.append((KEYS.get(data[i:i + 1], "ignore"), ""))
+            i += 1
+            continue
+        end = i
+        while end < len(data) and data[end] >= 0x20 and data[end] != 0x7f:
+            end += 1
+        keys.extend(("text", ch) for ch in decoder.decode(data[i:end]))
+        i = end
+    return keys, b""
+
+
+class Picker:
+    def __init__(self, folders, home, window_only=False):
+        self.folders = folders
+        self.labels = [label(path, home) for path, _ in folders]
+        self.window_only = window_only
+        self.query = ""
+        self.message = ""
+        self.height = min(len(folders), LIST_ROWS)
+        self.filter()
+
+    def filter(self):
+        self.rows = []
+        for index, (name, parent) in enumerate(self.labels):
+            found = match(self.query, "%s  %s" % (name, parent))
+            if found is not None:
+                self.rows.append((index, found))
+        self.selected = 0
+        self.scroll = 0
+
+    def move(self, delta):
+        if self.rows:
+            self.selected = max(0, min(len(self.rows) - 1, self.selected + delta))
+            if self.selected < self.scroll:
+                self.scroll = self.selected
+            elif self.selected >= self.scroll + self.height:
+                self.scroll = self.selected + 1 - self.height
+
+    def key(self, name, text=""):
+        """Aplica una tecla: None para seguir, "cancel" o (dónde, ruta)."""
+        self.message = ""
+        if name == "text":
+            self.query += text
+            self.filter()
+        elif name == "backspace":
+            self.query = self.query[:-1]
+            self.filter()
+        elif name == "clear":
+            self.query = ""
+            self.filter()
+        elif name in ("up", "down", "pageup", "pagedown"):
+            step = {"up": -1, "down": 1, "pageup": -self.height, "pagedown": self.height}[name]
+            self.move(step)
+        elif name == "cancel":
+            return "cancel"
+        elif name in ("enter", "window") and self.rows:
+            path, mark = self.folders[self.rows[self.selected][0]]
+            if mark == "missing":
+                self.message = MISSING
+                return None
+            where = "window" if self.window_only or name == "window" else "here"
+            return where, path
+        return None
+
+    def render(self, width):
+        """Las líneas de la lista, con colores ANSI, de `width` columnas como
+        mucho: lo escrito, las carpetas y la ayuda."""
+        width = max(width, 10)
+        if self.query:
+            lines = ["\x1b[34m›\x1b[39m %s▏" % self.query[-(width - 4):]]
+        else:
+            lines = ["\x1b[34m›\x1b[39m ▏\x1b[2m%s\x1b[22m" % PLACEHOLDER[:width - 4]]
+        for y in range(self.height):
+            row = self.scroll + y
+            if row < len(self.rows):
+                index, found = self.rows[row]
+                lines.append(self.render_row(index, found, row == self.selected, width))
+            elif row == 0:
+                lines.append("  \x1b[2mNinguna carpeta coincide\x1b[22m")
+            else:
+                lines.append("")
+        footer = self.message or (HINT_WINDOW if self.window_only else HINT)
+        lines.append("\x1b[%sm%s\x1b[0m" % ("31" if self.message else "2", footer[:width]))
+        return lines
+
+    def render_row(self, index, found, selected, width):
+        name, parent = self.labels[index]
+        path, mark = self.folders[index]
+        text = "%s  %s" % (name, parent)
+        trail = MARKS.get(mark, "")
+        room = width - 2 - (len(trail) + 2 if trail else 0)
+        if len(text) > room:
+            text = text[:max(room - 1, 0)] + "…"
+        out = []
+        for i, ch in enumerate(text):
+            style = "2" if mark == "missing" or i >= len(name) else ""
+            if i in found:
+                style = "1" if selected else "1;34"
+            out.append("\x1b[%sm%s\x1b[22;39m" % (style, ch) if style else ch)
+        line = "  " + "".join(out) + " " * (room - len(text))
+        if trail:
+            line += "  \x1b[2m%s\x1b[22m" % trail
+        return "\x1b[7m%s\x1b[27m" % line if selected else line
+
+
+def draw(fd, lines):
+    """Dibuja las líneas desde la del cursor y lo deja en la primera."""
+    out = "".join("\r\x1b[2K%s%s" % (line, "\n" if i < len(lines) - 1 else "") for i, line in enumerate(lines))
+    if len(lines) > 1:
+        out += "\x1b[%dA" % (len(lines) - 1)
+    os.write(fd, (out + "\r").encode())
+
+
+def run(picker, fd):
+    saved = termios.tcgetattr(fd)
+    decoder = codecs.getincrementaldecoder("utf-8")("ignore")
+    lines = picker.height + 2
+    tty.setraw(fd)
+    # Sitio para la lista debajo del cursor; protocolo de kitty (flag 1) y
+    # sin cursor: lo escrito lleva el suyo (▏).
+    os.write(fd, b"\r" + b"\n" * (lines - 1) + b"\x1b[%dA" % (lines - 1) + b"\x1b[>1u\x1b[?25l")
+    pending = b""
+    try:
+        while True:
+            draw(fd, picker.render(os.get_terminal_size(fd).columns - 1))
+            ready, _, _ = select.select([fd], [], [], HOLD if pending else None)
+            if not ready:
+                # Una secuencia que no se completó: Esc solo, en el modo clásico.
+                data, pending = pending, b""
+                keys = [("cancel", "")] if data == b"\x1b" else []
+            else:
+                data = pending + os.read(fd, 1024)
+                keys, pending = parse_keys(data, decoder)
+            for name, text in keys:
+                result = picker.key(name, text)
+                if result == "cancel":
+                    return None
+                if result:
+                    return result
+    finally:
+        os.write(fd, b"\r\x1b[J\x1b[?25h\x1b[<u")
+        termios.tcsetattr(fd, termios.TCSAFLUSH, saved)
+
+
+def main(argv):
+    folders = load()
+    if not folders:
+        print("vkterm: aún no has abierto ninguna carpeta en vkTERM.", file=sys.stderr)
+        return 1
+    try:
+        fd = os.open("/dev/tty", os.O_RDWR)
+    except OSError:
+        print("vkterm: la lista de carpetas recientes necesita un terminal.", file=sys.stderr)
+        return 1
+    try:
+        result = run(Picker(folders, str(Path.home()), "--window" in argv[1:]), fd)
+    finally:
+        os.close(fd)
+    if not result:
+        return 1
+    print("%s\t%s" % result)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

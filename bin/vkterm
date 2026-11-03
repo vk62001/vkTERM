@@ -2,7 +2,8 @@
 # vkTERM — el comando `vkterm`, como `code` de VS Code: abre una carpeta en el
 # IDE (explorador, editor con pestañas, Shell, Claude Code y Codex).
 #
-#   vkterm [--then ACCIÓN] [--here] [--new] [DIRECTORIO] [ARCHIVO]
+#   vkterm [--then ACCIÓN] [--here [--new]] [--window] [DIRECTORIO] [ARCHIVO]
+#   vkterm -r [--here] [--window]
 #   vkterm --version
 #
 #   DIRECTORIO  carpeta del proyecto; por defecto, la actual.
@@ -14,27 +15,41 @@
 #   - En una pestaña de vkTERM.app en modo terminal: esa misma pestaña pasa a
 #     ser el IDE. El shell queda debajo, intacto; al cerrar la carpeta (⌘K F)
 #     se vuelve a él.
+#   - Si la carpeta ya está abierta en otra pestaña de vkTERM.app, su IDE se
+#     trae a esta con todo vivo (Claude Code, Codex, el Shell, los archivos
+#     sin guardar) y aquella vuelve a su shell: así se pasa el IDE a una
+#     ventana más grande. Una carpeta solo se abre una vez.
 #   - Desde otro terminal o desde el Shell del propio IDE: en una ventana
-#     nueva de vkTERM.app (bin/vkterm-surface open).
-#   - Si la carpeta ya está abierta en otra pestaña, se enfoca esa pestaña.
+#     nueva de vkTERM.app (bin/vkterm-surface open); si la carpeta ya está
+#     abierta, se enfoca su pestaña, como VS Code.
+#   - «Abrir reciente» (⌘O) del IDE con Enter: al cerrar la carpeta, la misma
+#     pestaña abre la elegida (projects/<huella>/next, bin/vkterm-state).
 #
+#   -r, --recent  elige la carpeta en la lista de las ya abiertas (⌘O en el
+#               prompt; bin/vkterm-recent): Enter aquí, ⇧Enter en una ventana
+#               nueva.
 #   --here      el IDE en el terminal actual, sea cual sea, sin modos ni atajos
 #               ⌘ de vkTERM.app (otros emuladores y scripts/smoke-test.py).
+#   --new       con --here: siempre una sesión nueva, aunque ya haya una de la
+#               carpeta (pruebas).
+#   --window    en una ventana nueva de vkTERM.app, aunque se pudiera abrir en
+#               el sitio.
 #   --then      acción al abrir, como los atajos del modo terminal:
 #               show_sidebar (⌘B), show_panel (⌘J), quick_open (⌘P) o
 #               command_palette (⌘⇧P).
-#   --new       siempre una sesión nueva, aunque la carpeta ya esté abierta.
 #   --version   la versión de vkTERM (archivo VERSION; cambios en CHANGELOG.md).
 emulate -L zsh
 setopt err_exit no_unset pipe_fail
 
 vkterm_home=${0:A:h:h}
 bin=$vkterm_home/bin
-here=0 new=0 then=
+here=0 new=0 recent=0 window=0 then=
 while (( $# )); do
   case $1 in
     --here) here=1 ;;
     --new) new=1 ;;
+    -r|--recent) recent=1 ;;
+    --window) window=1 ;;
     --version) print -r -- "vkTERM $(<$vkterm_home/VERSION)"; exit 0 ;;
     --then) then=${2:?falta la acción de --then}; shift ;;
     --) shift; break ;;
@@ -43,6 +58,22 @@ while (( $# )); do
   esac
   shift
 done
+if (( new && ! here )); then
+  print -u2 "vkterm: --new solo vale con --here: en vkTERM.app una carpeta se abre una vez y \`vkterm\` va a su pestaña."
+  exit 2
+fi
+
+# En el sitio: en una pestaña de vkTERM.app en modo terminal (o con --here).
+in_place=0
+if (( here )) || [[ -z ${ZELLIJ:-} && -n ${VKTERM_APP_ID:-} && ${TERM_PROGRAM:-} == ghostty ]]; then
+  (( window )) || in_place=1
+fi
+
+if (( recent )); then
+  choice=$($bin/vkterm-recent ${${in_place:#1}:+--window}) || exit 0
+  [[ ${choice%%$'\t'*} == window ]] && in_place=0
+  set -- "${choice#*$'\t'}"
+fi
 project=${1:-$PWD}
 file=${2:-}
 if [[ ! -d $project ]]; then
@@ -52,26 +83,70 @@ fi
 project=${project:A}
 export VKTERM_THEN=$then
 
-if (( here )); then
-  exec $bin/vkterm-workspace ${${new:#0}:+--new} $project ${file:+"$file"}
-fi
-
-memory=$($bin/vkterm-state dir $project)
-surface=$memory/surface
-
 # Como VS Code: si la carpeta ya está abierta, se va a su pestaña. Si la
 # pestaña ya no existe (se cerró la ventana sin que bin/vkterm pudiera borrar
 # el archivo), se abre de nuevo.
-if (( ! new )) && [[ -f $surface ]]; then
+focus_open() {
+  local surface=$($bin/vkterm-state dir $1)/surface pid id
+  [[ -f $surface ]] || return 1
   pid=$(sed -n 's/^pid=//p' $surface) id=$(sed -n 's/^id=//p' $surface)
   if [[ -n $pid && -n $id ]] && kill -0 $pid 2>/dev/null \
       && VKTERM_APP_ID=$(sed -n 's/^app=//p' $surface) $bin/vkterm-surface focus $id; then
-    exit 0
+    print -u2 "vkterm: ${1/#$HOME/~} ya está abierta en otra pestaña: vamos a ella."
+    return 0
   fi
   rm -f $surface
+  return 1
+}
+
+# «Traer el IDE aquí»: si la carpeta está abierta en otra pestaña de esta app,
+# aquella suelta su sesión de Zellij (bin/vkterm-surface detach), vuelve a su
+# shell y avisa; esta espera a que su bin/vkterm termine y se adjunta a la
+# sesión (attach) con todo lo que corre en ella. 0: traída; 1: no está abierta
+# en otra pestaña; 2: no se puede traer (otra app, una pestaña de una versión
+# de vkTERM que no anotaba su sesión, o no respondió): se va a ella.
+attach=
+take_over() {
+  local memory=$($bin/vkterm-state dir $1) pid other app session
+  [[ -f $memory/surface ]] || return 1
+  pid=$(sed -n 's/^pid=//p' $memory/surface) other=$(sed -n 's/^id=//p' $memory/surface)
+  app=$(sed -n 's/^app=//p' $memory/surface) session=$(sed -n 's/^session=//p' $memory/surface)
+  if [[ -z $pid || -z $other ]] || ! kill -0 $pid 2>/dev/null; then
+    rm -f $memory/surface
+    return 1
+  fi
+  if [[ -z $session || $app != $VKTERM_APP_ID ]]; then
+    print -u2 "vkterm: ${1/#$HOME/~} no se puede traer de su pestaña (se abrió con una versión anterior de vkTERM o en otra app); ciérrala allí con ⌘K F para abrirla aquí."
+    return 2
+  fi
+  print $$ > $memory/handoff
+  if $bin/vkterm-surface detach $other; then
+    for _ in {1..100}; do
+      kill -0 $pid 2>/dev/null || break
+      sleep 0.1
+    done
+  fi
+  rm -f $memory/handoff
+  if kill -0 $pid 2>/dev/null; then
+    print -u2 "vkterm: la pestaña de ${1/#$HOME/~} no soltó el IDE."
+    return 2
+  fi
+  attach=$session
+}
+
+if (( ! here )); then
+  if [[ -n ${ZELLIJ:-} && $project == ${VKTERM_PROJECT:-} ]]; then
+    print -u2 "vkterm: esta carpeta ya está abierta en este IDE."
+    exit 0
+  fi
+  # En el sitio se trae aquí (take_over, al reclamar la pestaña).
+  if (( ! in_place )) && focus_open $project; then
+    exit 0
+  fi
 fi
 
-# Fuera de una pestaña de vkTERM.app en modo terminal: ventana nueva.
+# Ventana nueva: fuera de una pestaña de vkTERM.app en modo terminal, o con
+# --window o ⇧Enter en la lista de recientes.
 open_window() {
   if [[ -z ${VKTERM_APP_ID:-} && ! -d $($bin/vkterm-app path) ]]; then
     print -u2 "vkterm: falta vkTERM.app; créala con: $bin/vkterm-app install"
@@ -82,33 +157,93 @@ open_window() {
   $bin/vkterm-surface open $project $then
   exit 0
 }
-if [[ -n ${ZELLIJ:-} || -z ${VKTERM_APP_ID:-} || ${TERM_PROGRAM:-} != ghostty ]]; then
-  open_window
+(( in_place )) || open_window
+
+# En el sitio, una carpeta detrás de otra: «Abrir reciente» con Enter deja en
+# la memoria de la carpeta la siguiente (next) y cierra la sesión. La pestaña
+# sigue en modo IDE entre las dos.
+id= surface=
+next_folder() {
+  local memory=$($bin/vkterm-state dir $project) next=
+  [[ -f $memory/next ]] && next=$(<$memory/next)
+  rm -f $memory/next
+  [[ -n $next && -d $next && $next != $project ]] || return 1
+  # Si entretanto se abrió en otra pestaña, se trae aquí; si no se puede, se
+  # va a ella y esta vuelve al shell.
+  if (( ! here )); then
+    local taken=0
+    take_over $next || taken=$?
+    if (( taken == 2 )) && focus_open $next; then
+      return 1
+    fi
+  fi
+  project=$next file= then=
+  export VKTERM_THEN=
+}
+moved=
+workspaces() {
+  local code memory args
+  while true; do
+    memory=$($bin/vkterm-state dir $project)
+    rm -f $memory/next
+    args=(${${new:#0}:+--new})
+    if [[ -n $id ]]; then
+      surface=$memory/surface
+      print -l "id=$id" "pid=$$" "app=$VKTERM_APP_ID" > $surface
+      args+=(--surface $surface)
+      # ⌘T durante el IDE abre la pestaña nueva en la carpeta del proyecto.
+      print -n "\e]7;file://${HOST}${project}\a" > /dev/tty
+    fi
+    [[ -z $attach ]] || args+=(--attach $attach)
+    code=0
+    $bin/vkterm-workspace $args $project ${file:+"$file"} || code=$?
+    [[ -z $surface ]] || rm -f $surface
+    new=0 attach=
+    # Otra pestaña se trajo el IDE (take_over): esta vuelve a su shell.
+    if [[ -f $memory/handoff ]]; then
+      moved=$project
+      return 0
+    fi
+    next_folder || return $code
+  done
+}
+
+if (( here )); then
+  workspaces
+  exit
 fi
 
-# En el sitio. Un título único (OSC 2) identifica esta pestaña ante AppleScript;
-# si no se encuentra (p. ej. dentro de tmux), ventana nueva.
+# Un título único (OSC 2) identifica esta pestaña ante AppleScript; si no se
+# encuentra (p. ej. dentro de tmux), ventana nueva.
 nonce=vkterm-$$-$RANDOM$RANDOM
 print -n "\e]2;$nonce\a" > /dev/tty
 if ! id=$($bin/vkterm-surface claim $nonce) || [[ -z $id ]]; then
+  print -u2 "vkterm: vkTERM.app no encuentra esta pestaña; se abre en una ventana nueva."
+  focus_open $project && exit 0
   open_window
 fi
-print -l "id=$id" "pid=$$" "app=$VKTERM_APP_ID" > $surface
+
+taken=0
+take_over $project || taken=$?
+if (( taken == 2 )) && focus_open $project; then
+  $bin/vkterm-surface release $id || true
+  exit 0
+fi
 
 restore() {
-  rm -f $surface
   $bin/vkterm-surface release $id || true
+  ( sleep 3; $bin/vkterm-surface settle $id ) >/dev/null 2>&1 &!
   # Como al salir de vim: el cursor vuelve a donde estaba y se borra lo que
   # Zellij deja debajo ("Bye from Zellij!"). Y la carpeta del shell para
   # Ghostty (⌘T abre ahí la pestaña nueva).
   print -n "\e8\e[J\e]7;file://${HOST}${PWD}\a" > /dev/tty 2>/dev/null || true
 }
 # Al cerrar la pestaña (SIGHUP) ya no hay terminal que restaurar.
-trap 'rm -f $surface; exit 129' HUP
-# ⌘T durante el IDE abre la pestaña nueva en la carpeta del proyecto. \e7
-# guarda la posición del cursor para restore().
-print -n "\e7\e]7;file://${HOST}${project}\a" > /dev/tty
+trap '[[ -z $surface ]] || rm -f $surface; exit 129' HUP
+# \e7 guarda la posición del cursor para restore().
+print -n "\e7" > /dev/tty
 code=0
-$bin/vkterm-workspace ${${new:#0}:+--new} $project ${file:+"$file"} || code=$?
+workspaces || code=$?
 restore
+[[ -z $moved ]] || print -u2 "vkterm: ${moved/#$HOME/~} pasó a otra pestaña, con todo lo que tenía abierto."
 exit $code

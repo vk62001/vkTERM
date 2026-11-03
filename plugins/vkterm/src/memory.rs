@@ -1,5 +1,7 @@
 //! Memoria del workspace de cada carpeta, como VS Code: qué zonas se ven, qué
-//! panel tiene el foco y qué carpetas del explorador están desplegadas. El
+//! panel tiene el foco, qué carpetas del explorador están desplegadas, la
+//! vista de la barra lateral y la rama con la que se comparan los conflictos
+//! en Control de código fuente. El
 //! plugin la guarda con `vkterm-state save workspace …` cuando cambia y la
 //! aplica una vez al abrir la carpeta (bin/vkterm-state load).
 //!
@@ -23,6 +25,10 @@ pub struct Memory {
     pub expanded: Vec<PathBuf>,
     pub selected: Option<PathBuf>,
     pub show_excluded: bool,
+    /// La vista de la barra lateral: Some("scm") o el explorador.
+    pub view: Option<String>,
+    /// La rama elegida para comparar (sin ella, la principal).
+    pub compare: Option<String>,
     /// Acción pendiente al abrir (no se guarda: viene de `vkterm --then`).
     pub then: Option<String>,
 }
@@ -48,6 +54,10 @@ impl Memory {
                 "focus" if FOCUS_TARGETS.contains(&value) => memory.focus = Some(value.to_string()),
                 "expanded" => memory.expanded.extend(inside(value)),
                 "selected" => memory.selected = inside(value),
+                "view" if value == "scm" => memory.view = Some(value.to_string()),
+                "compare" if !value.is_empty() && !value.chars().any(char::is_control) => {
+                    memory.compare = Some(value.to_string())
+                }
                 "then" if THEN_ACTIONS.contains(&value) => memory.then = Some(value.to_string()),
                 _ => {}
             }
@@ -73,6 +83,12 @@ impl Memory {
         if let Some(selected) = &self.selected {
             lines.push(format!("selected={}", selected.display()));
         }
+        if let Some(view) = &self.view {
+            lines.push(format!("view={view}"));
+        }
+        if let Some(compare) = &self.compare {
+            lines.push(format!("compare={compare}"));
+        }
         lines.join("\n")
     }
 }
@@ -89,9 +105,12 @@ mod tests {
             expanded: vec!["src".into(), "src/components".into()],
             selected: Some("src/App.tsx".into()),
             show_excluded: true,
+            view: Some("scm".into()),
+            compare: Some("origin/main".into()),
             then: None,
         };
         assert_eq!(Memory::parse(&memory.to_text()), memory);
+        assert_eq!(Memory::parse("view=terminal\ncompare=").view, None);
     }
 
     #[test]

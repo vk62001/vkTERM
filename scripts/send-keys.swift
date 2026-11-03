@@ -3,7 +3,9 @@
 //   send-keys <pid> <combo>...
 //   combo: [cmd+][lopt+|ropt+][ctrl+][shift+]<tecla>  ·  text:<ascii>  ·  sleep:<ms>
 //   teclas: a-z, 0-9, left, right, up, down, enter, esc, tab, space, backspace,
-//           comma, period, f1-f12
+//           comma, period, f1-f12, y por posición (la de EE. UU.): equal, minus,
+//           rightbracket y slash (en el teclado español, + es rightbracket y
+//           - es slash)
 //
 // Lo usa `scripts/smoke-test.py --ghostty`. Los eventos se entregan solo al
 // proceso <pid> (CGEvent.postToPid): no roban el foco ni pueden llegar a otra
@@ -19,7 +21,7 @@ let keyCodes: [String: CGKeyCode] = [
     "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17, "1": 18, "2": 19,
     "3": 20, "4": 21, "6": 22, "5": 23, "9": 25, "7": 26, "8": 28, "0": 29, "o": 31,
     "u": 32, "i": 34, "p": 35, "l": 37, "j": 38, "k": 40, "n": 45, "m": 46,
-    "comma": 43, "period": 47,
+    "comma": 43, "period": 47, "equal": 24, "minus": 27, "rightbracket": 30, "slash": 44,
     "enter": 36, "tab": 48, "space": 49, "backspace": 51, "esc": 53,
     "left": 123, "right": 124, "down": 125, "up": 126,
     "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97, "f7": 98, "f8": 100,

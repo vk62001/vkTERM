@@ -4,7 +4,11 @@
 #   vkterm-surface claim NONCE           activa el modo IDE en la pestaña cuyo
 #                                        título es NONCE; escribe su id
 #   vkterm-surface release ID            vuelve al modo terminal
+#   vkterm-surface settle ID             vuelve al modo terminal si ninguna
+#                                        carpeta abierta usa esa pestaña
 #   vkterm-surface focus ID              enfoca esa pestaña y trae la app al frente
+#   vkterm-surface detach ID             esa pestaña suelta su sesión del IDE, que
+#                                        sigue viva para otra (bin/vkterm)
 #   vkterm-surface open DIR [ACCIÓN]     ventana nueva ya convertida en el IDE de DIR
 #   vkterm-surface reactivate            vuelve a activar el modo IDE en sus pestañas
 #
@@ -26,9 +30,12 @@ app_id=${VKTERM_APP_ID:-io.github.vk62001.vkterm}
 # Ejecuta el AppleScript de la entrada estándar con argumentos. El id de la app
 # va escrito en el texto (@APP@): con `tell application id <variable>`,
 # AppleScript no puede compilar los términos de Ghostty (terminal, perform
-# action…).
+# action…). Con la app cerrada no hace nada: `tell application` la abriría
+# (p. ej. `settle`, unos segundos después de cerrar la carpeta, si ya se salió
+# de la app). Solo `open` la lanza, con `open -b`.
 osa() {
   local script=$(cat)
+  running || return 1
   osascript -e "${script//@APP@/\"$app_id\"}" "$@" 2>/dev/null
 }
 
@@ -62,6 +69,15 @@ on run {terminalId}
 end run
 OSA
     ;;
+  settle)
+    # bin/vkterm, unos segundos después de cerrar la carpeta: una recarga de
+    # Ghostty en curso (cambio de tema o de fuente) pudo volver a activar el
+    # modo IDE en la pestaña justo después de soltarlo.
+    for file in $state/projects/*/surface(N); do
+      [[ $(sed -n 's/^id=//p' $file) == ${2:?id} ]] && exit 0
+    done
+    exec $0 release $2
+    ;;
   focus)
     osa ${2:?id} <<'OSA' >/dev/null
 on run {terminalId}
@@ -69,6 +85,16 @@ on run {terminalId}
     focus terminal id terminalId
     activate
   end tell
+end run
+OSA
+    ;;
+  detach)
+    # «Traer el IDE aquí» (bin/vkterm): ⌥` en la pestaña ID, que su Zellij
+    # convierte en Detach (config/zellij/config.kdl). Su bin/vkterm vuelve al
+    # shell y la sesión espera a la pestaña nueva.
+    osa ${2:?id} <<'OSA' >/dev/null
+on run {terminalId}
+  tell application id @APP@ to perform action "esc:`" on terminal id terminalId
 end run
 OSA
     ;;
@@ -121,7 +147,7 @@ OSA
     done
     ;;
   *)
-    print -u2 "uso: vkterm-surface claim NONCE | release ID | focus ID | open DIR [ACCIÓN] | reactivate"
+    print -u2 "uso: vkterm-surface claim NONCE | release ID | settle ID | focus ID | detach ID | open DIR [ACCIÓN] | reactivate"
     exit 2
     ;;
 esac

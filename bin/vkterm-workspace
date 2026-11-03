@@ -3,7 +3,8 @@
 # actual. Lo lanza bin/vkterm, el comando `vkterm`; a mano solo hace falta en
 # otros emuladores (`vkterm --here`).
 #
-#   bin/vkterm-workspace [--new] [DIRECTORIO] [ARCHIVO]
+#   bin/vkterm-workspace [--new] [--surface ARCHIVO] [--attach SESIÓN]
+#                        [DIRECTORIO] [ARCHIVO]
 #
 #   DIRECTORIO  proyecto; por defecto, el directorio actual.
 #   ARCHIVO     archivo que Micro abre al crear la sesión (relativo al
@@ -11,6 +12,12 @@
 #               omite y la carpeta no tiene memoria, se usa la línea `open=`
 #               del archivo .vkterm del proyecto, si existe.
 #   --new       crea siempre una sesión nueva, sin tocar las existentes.
+#   --surface   archivo de la pestaña de vkTERM.app (projects/*/surface): se
+#               le añade `session=` con la sesión de Zellij, para que otra
+#               pestaña pueda traerse el IDE (bin/vkterm).
+#   --attach    se adjunta a esa sesión, que otra pestaña acaba de soltar
+#               («Traer el IDE aquí»), aunque se abriera con otra versión de
+#               config/zellij.
 #
 # La sesión dura lo que su pestaña: cerrar la carpeta (⌘K F) o la ventana la
 # termina (on_force_close "quit" en config.kdl). Lo que se recuerda de cada
@@ -24,11 +31,16 @@ emulate -L zsh
 setopt err_exit no_unset pipe_fail
 
 vkterm_home=${0:A:h:h}
-new_session=0
-if [[ ${1:-} == --new ]]; then
-  new_session=1
+new_session=0 surface= attach=
+while (( $# )); do
+  case $1 in
+    --new) new_session=1 ;;
+    --surface) surface=${2:?falta el archivo de --surface}; shift ;;
+    --attach) attach=${2:?falta la sesión de --attach}; shift ;;
+    *) break ;;
+  esac
   shift
-fi
+done
 project=${1:-$PWD}
 open_file=${2:-}
 
@@ -128,13 +140,21 @@ export EDITOR=micro VISUAL=micro          # git y los agentes abren Micro
 export MICRO_CONFIG_HOME=$state/micro
 path=($vkterm_home/bin $path)             # vkterm-editor, vkterm-shell, vkterm-open, vkterm-state…
 
-if zellij list-sessions --no-formatting 2>/dev/null \
+# La sesión traída de otra pestaña conserva su configuración: la copia de su
+# huella (el final del nombre), que no se borra mientras la sesión vive.
+if [[ -n $attach ]]; then
+  session=$attach session_config=$state/zellij/${attach##*-}
+fi
+[[ -z $surface ]] || print -r -- "session=$session" >> $surface
+
+if [[ -n $attach ]] || zellij list-sessions --no-formatting 2>/dev/null \
     | grep -v EXITED | grep -q "^$session "; then
   exec zellij --config-dir $session_config attach $session
 fi
 
 # Una sesión nueva arranca con el tema de Zellij guardado; config.kdl lleva el
 # predeterminado.
+vkterm-theme sync
 zellij_theme=$(vkterm-theme value zellij)
 theme_option=()
 [[ -n $zellij_theme ]] && theme_option=(options --theme $zellij_theme)

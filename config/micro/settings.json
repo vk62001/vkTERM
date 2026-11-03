@@ -1,10 +1,15 @@
 {
-    "colorscheme": "vkterm",
+    "colorscheme": "vkterm-catppuccin-mocha",
     "diffgutter": true,
     "mkparents": true,
     "savecursor": true,
     "tabsize": 2,
     "tabstospaces": true,
+    "truecolor": "on",
+    "autoclose": true,
+    "matchbrace": true,
+    "matchbracestyle": "highlight",
+    "showchars": "ispace=│,itab=│",
     "ft:go": {
         "tabsize": 4,
         "tabstospaces": false

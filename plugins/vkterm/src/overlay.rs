@@ -1,5 +1,7 @@
 //! Ventana de atajos (⌘K ⌘S), como el "Keyboard Shortcuts" de Unity: un panel
-//! flotante centrado con la lista de src/shortcuts.rs.
+//! flotante centrado con la lista de src/shortcuts.rs. Con los colores del
+//! editor del tema y las teclas en etiquetas, como el editor «Keyboard
+//! Shortcuts» de VS Code (⌘K ⌘S); las demás ventanas son de Quick Input.
 //!
 //! Es otra instancia del mismo plugin (configuración `mode "shortcuts"`): el
 //! atajo le manda `toggle_shortcuts` y Zellij la lanza si no existe. La
@@ -8,6 +10,7 @@
 //! el controlador atenúa el resto de paneles, que hacen de fondo.
 use crate::floating::{self, Floating, FRAME};
 use vkterm::shortcuts::{self, Style};
+use vkterm::style::Palette;
 use zellij_tile::prelude::*;
 
 const TITLE: &str = "Atajos de teclado";
@@ -41,6 +44,9 @@ impl Overlay {
         if self.floating.lost_focus(&event) {
             close_self();
             return false;
+        }
+        if self.floating.theme(&event) {
+            return true;
         }
         match event {
             Event::PaneUpdate(_) => {
@@ -83,28 +89,31 @@ impl Overlay {
     }
 
     pub fn render(&mut self, rows: usize, cols: usize) {
+        // El marco y las filas de las ventanas van sobre el fondo de Quick
+        // Input (`quick`): aquí, sobre el del editor.
+        let palette = Palette { quick: self.floating.palette.editor, ..self.floating.palette };
         let width = cols.saturating_sub(2 * (FRAME + PAD_X));
         let lines = shortcuts::layout(width);
         let height = rows.saturating_sub(2 * (FRAME + PAD_Y));
         self.max_scroll = lines.len().saturating_sub(height);
         self.scroll = self.scroll.min(self.max_scroll);
-        for (y, line) in lines.iter().skip(self.scroll).take(height).enumerate() {
-            let mut text = Text::new(&line.text);
-            for (style, range) in &line.spans {
-                text = match style {
-                    Style::Heading => text.color_range(2, range.clone()),
-                    Style::Key => text.color_range(0, range.clone()),
-                    Style::Rule => text.dim_range(range.clone()),
-                };
-            }
-            print_text_with_coordinates(text, FRAME + PAD_X, FRAME + PAD_Y + y, Some(width), Some(1));
-        }
         let hint = if self.max_scroll > 0 {
             "↑ ↓ desplazar · otra tecla cierra"
         } else {
             "Esc o cualquier tecla para cerrar"
         };
-        floating::frame(rows, cols, TITLE, hint);
+        floating::frame(rows, cols, TITLE, hint, &palette);
+        for (y, line) in lines.iter().skip(self.scroll).take(height).enumerate() {
+            let mut row = floating::row(&line.text, width, &palette);
+            for (style, range) in &line.spans {
+                match style {
+                    Style::Heading => row.paint(range.clone(), |l| l.with_fg(palette.accent).bold()),
+                    Style::Key => row.paint(range.clone(), |_| palette.keycap),
+                    Style::Rule => row.fg(range.clone(), palette.border),
+                }
+            }
+            print!("{}", row.render(FRAME + PAD_X, FRAME + PAD_Y + y));
+        }
     }
 
     fn scroll_by(&mut self, delta: isize) {

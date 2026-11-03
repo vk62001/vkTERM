@@ -11,9 +11,13 @@
 #     ⌘B / ⌘J / ⌘P / ⌘⇧P en el prompt convierten la pestaña; bin/vkterm-surface
 #     activa la tabla en esa pestaña (AppleScript `perform action`) y la
 #     desactiva al salir (⌘K F). Ghostty busca primero en la tabla activa y,
-#     si la tecla no está, en la de por defecto: ⌘T, ⌘N, ⌘Q o ⌘+ siguen
+#     si la tecla no está, en la de por defecto: ⌘T, ⌘N o ⌘Q siguen
 #     funcionando en el IDE.
 
+# Tema hasta que se elija uno con ⌘K ⌘T: el Catppuccin Mocha de Ghostty, el
+# mismo que vkterm-catppuccin-mocha (config/ghostty/themes). Los temas de
+# vkTERM se cargan por ruta absoluta (config/local/theme.ghostty) porque
+# Ghostty solo busca por nombre en ~/.config/ghostty/themes y en los suyos.
 theme = Catppuccin Mocha
 window-save-state = never
 macos-titlebar-style = transparent
@@ -43,6 +47,12 @@ keybind = super+j=csi:26;9~
 keybind = super+p=csi:28;9~
 keybind = super+shift+p=csi:29;9~
 
+# ⌘O: «Abrir reciente», como en VS Code (⌃R allí; aquí ⌃R es la búsqueda del
+# historial de zsh): la lista de las carpetas ya abiertas en vkTERM. Envía F20
+# con Super, que la integración de zsh recoge en el prompt (`vkterm -r`); en
+# el IDE abre la misma lista (abajo).
+keybind = super+o=csi:34;9~
+
 # ⌘T (pestaña nueva) y ⌘⇧, (recargar la configuración) van por tecla física
 # (key_t, comma) y no por carácter. Con el carácter, Ghostty pone el atajo en
 # su menú (New Tab, Reload Configuration) y macOS lo resuelve por el menú
@@ -53,6 +63,39 @@ keybind = super+t=unbind
 keybind = super+key_t=new_tab
 keybind = super+shift+,=unbind
 keybind = super+shift+comma=reload_config
+# ⌘Enter: commit en Control de código fuente (en el IDE, abajo). Ghostty lo
+# usa para la pantalla completa y lo pone en su menú, que macOS resolvería
+# antes que la tabla del IDE. La pantalla completa sigue en ⌃⌘F, como en las
+# demás apps de macOS; en el modo terminal ⌘Enter no hace nada (sin
+# `ignore`, llegaría al shell como Enter).
+keybind = super+enter=ignore
+
+# ⌘N: ventana nueva en el modo terminal y «Nuevo archivo…» en el IDE (abajo).
+# Por tecla física, como ⌘T: con el carácter, el menú (New Window) se quedaría
+# el atajo y macOS lo resolvería antes que la tabla del IDE. ⌘⇧N también abre
+# una ventana, como en VS Code.
+keybind = super+n=unbind
+keybind = super+key_n=new_window
+keybind = super+shift+key_n=new_window
+
+# ⌘+ ⌘- ⌘0: el tamaño de letra de vkTERM, que se recuerda (bin/vkterm-font),
+# en los dos modos. Sustituyen a los de Ghostty: con ellos en su menú (View),
+# macOS resolvía ⌘- y ⌘0 por el menú antes que por la tabla del IDE y solo
+# cambiaba esa pestaña. En el modo terminal envían F17–F19 con Super, que la
+# integración de zsh recoge en el prompt; fuera de él, los programas los
+# ignoran. El + del teclado español y el = (⇧0) del de EE. UU.
+keybind = super++=csi:31;9~
+keybind = super+==csi:31;9~
+keybind = super+-=csi:32;9~
+keybind = super+0=csi:33;9~
+
+# ⌘V: pega el texto, como siempre. Con `performable:`, si el portapapeles no
+# tiene texto (una captura de pantalla), Ghostty no pega nada y envía la tecla
+# al programa, que la recibe si usa el protocolo de teclado de kitty. Claude
+# Code y Codex adjuntan la imagen con ⌃V: en el modo terminal corren a través
+# de bin/vkterm-agent (config/zsh/vkterm.zsh), que les cambia ese ⌘V por ⌃V.
+# En el IDE lo hace el plugin vkterm (abajo).
+keybind = performable:super+v=paste_from_clipboard
 
 # ----------------------------------------------------------------- modo IDE
 #
@@ -107,6 +150,10 @@ keybind = vkterm/super+shift+p=esc:;
 # ⌘S: guardar en Micro.
 keybind = vkterm/super+s=esc:OQ
 
+# ⌘N: «Nuevo archivo…», como en VS Code: pide el nombre y lo crea en la
+# carpeta seleccionada del explorador. ⌘⇧N abre una ventana (arriba).
+keybind = vkterm/super+n=esc:d
+
 # ⌘K ⌘S: ventana de atajos, como en VS Code (secuencia: ⌘K y después ⌘S).
 # Ghostty espera la segunda tecla sin límite de tiempo; si no es una de las
 # de abajo, envía las dos al programa. En el modo terminal ⌘K limpia la
@@ -120,10 +167,35 @@ keybind = vkterm/super+k>z=esc:z
 # ⌘K ⌘T: tema de color, como en VS Code (secuencia: ⌘K y después ⌘T).
 keybind = vkterm/super+k>super+t=esc:t
 
+# ⌘K ⌘L: fuente (tipo de letra y tamaño), con prueba en vivo, como el
+# selector de tema. VS Code no tiene uno: la L es de «letra».
+keybind = vkterm/super+k>super+l=esc:g
+
+# ⌘+ / ⌘- / ⌘0: tamaño de letra, como en VS Code, y se recuerda
+# (bin/vkterm-font). Por carácter: el + del teclado español y el = del de
+# EE. UU. (En el modo terminal, ver arriba.)
+keybind = vkterm/super++=esc:m
+keybind = vkterm/super+==esc:m
+keybind = vkterm/super+-=esc:w
+keybind = vkterm/super+0=esc:e
+
 # ⌘K F: cerrar la carpeta, como «File: Close Folder» de VS Code. Termina la
 # sesión del IDE (Micro, Claude Code, Codex) y vuelve al modo terminal, con
 # el shell de antes intacto.
 keybind = vkterm/super+k>f=esc:q
+# Control de código fuente, como en VS Code: ⌃⇧G muestra la vista con los
+# cambios de git y los conflictos (también los que habría al fusionar otra
+# rama) y ⌘⇧E vuelve al explorador; las dos están en la misma barra lateral.
+# ⌘Enter hace commit en esa vista (fuera de ella no hace nada). En el modo
+# terminal no hacen nada especial.
+keybind = vkterm/ctrl+shift+g=esc:/
+keybind = vkterm/super+shift+e=esc:'
+keybind = vkterm/super+enter=esc:*
+
+# ⌘O: «Abrir reciente», como «File: Open Recent» de VS Code: Enter abre la
+# carpeta en esta pestaña (cierra antes la actual, preguntando si se perdería
+# algo) y ⇧Enter en una ventana nueva.
+keybind = vkterm/super+o=esc:b
 
 # ⌘← / ⌘→: inicio / fin de línea (Home / End). Por defecto Ghostty envía
 # Ctrl-A / Ctrl-E, que en Micro son "seleccionar todo" y "línea de comandos".
@@ -162,9 +234,12 @@ keybind = vkterm/super+shift+d=ignore
 # a activar el modo IDE en sus pestañas.
 keybind = vkterm/super+shift+comma=esc:r
 
-# Tipo de letra u otros ajustes propios (opcional, fuera de git), antes del
-# tema.
+# Ajustes propios (opcional, fuera de git), antes de la fuente y del tema.
 config-file = ?../local/user.ghostty
+
+# Fuente y tamaño elegidos con ⌘K ⌘L, ⌘+, ⌘- y ⌘0 (bin/vkterm-font): mandan
+# sobre los de user.ghostty.
+config-file = ?../local/font.ghostty
 
 # Tema elegido con ⌘K ⌘T (bin/vkterm-theme). Ghostty carga este archivo al
 # final, así que sustituye al `theme` de arriba; "?": si no existe (no se ha

@@ -1,5 +1,6 @@
 {
     "Ctrl-g": "None",
     "Ctrl-u": "None",
-    "F1": "ToggleHelp"
+    "F1": "ToggleHelp",
+    "MouseRight": "lua:vkterm.contextmenu"
 }

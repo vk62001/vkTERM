@@ -40,6 +40,17 @@ check Codex      no  codex  codex --version
 ghostty=${VKTERM_GHOSTTY_APP:-/Applications/Ghostty.app}/Contents/MacOS/ghostty
 check Ghostty    no  $ghostty $ghostty --version
 
+# Control de código fuente (⌃⇧G): los conflictos que habría al fusionar otra
+# rama usan `git merge-tree --write-tree`, de git 2.38.
+if (( $+commands[git] )); then
+  git_version=$(git --version | grep -oE '[0-9]+\.[0-9]+' | head -1)
+  if [[ ${git_version%%.*} -gt 2 || ( ${git_version%%.*} -eq 2 && ${git_version#*.} -ge 38 ) ]]; then
+    row "git ≥ 2.38" ok "conflictos entre ramas en Control de código fuente"
+  else
+    row "git ≥ 2.38" aviso "git $git_version: Control de código fuente no podrá avisar de conflictos entre ramas"
+  fi
+fi
+
 print "\nPlugin vkterm (Rust → WebAssembly)"
 if (( $+commands[rustup] )) && rustup target list --installed 2>/dev/null | grep -qx wasm32-wasip1; then
   row wasm32-wasip1 ok "target instalado"

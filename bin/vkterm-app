@@ -23,6 +23,11 @@
 #     lanzador (scripts/vkterm-app-launcher.c) que arranca el `ghostty` real
 #     con el perfil config/ghostty/vkterm.ghostty.
 #
+# De dónde sale: de la compilación de Ghostty con los parches de vkTERM
+# (scripts/build-ghostty.sh: sin el indicador «⌨ vkterm» sobre el IDE) si
+# existe para la versión instalada; si no, de /Applications/Ghostty.app tal
+# cual. VKTERM_GHOSTTY_APP fija otra.
+#
 # La copia se vuelve a firmar en local (ad hoc) y sin la marca de cuarentena
 # que trae la Ghostty.app descargada: con la firma original modificada,
 # Gatekeeper la rechazaría. Cada vez que se actualice Ghostty (o se mueva el
@@ -34,7 +39,14 @@ setopt err_exit no_unset pipe_fail extended_glob
 
 script=${0:A}
 vkterm_home=${script:h:h}
-ghostty_app=${VKTERM_GHOSTTY_APP:-/Applications/Ghostty.app}
+patched_app=$($vkterm_home/scripts/build-ghostty.sh --path 2>/dev/null || true)
+ghostty_app=${VKTERM_GHOSTTY_APP:-}
+if [[ -z $ghostty_app ]]; then
+  ghostty_app=/Applications/Ghostty.app
+  if [[ -n $patched_app && -d $patched_app ]]; then
+    ghostty_app=$patched_app
+  fi
+fi
 PB=/usr/libexec/PlistBuddy
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
@@ -82,7 +94,9 @@ version_ok() {  # $1 >= $2 (x.y.z)
 stamp() {
   {
     print -r -- $vkterm_home $app_id
+    print -r -- $ghostty_app
     plist_value $ghostty_app/Contents/Info.plist CFBundleVersion
+    stat -f %m $ghostty_app/Contents/MacOS/ghostty 2>/dev/null || true
     cat $vkterm_home/scripts/vkterm-app-launcher.c $vkterm_home/docs/assets/vkterm.icns $script
   } | md5
 }
@@ -111,19 +125,22 @@ install_app() {
   local info=$tmp/Contents/Info.plist
   # Sin el icono del catálogo de Ghostty (tiene prioridad sobre
   # CFBundleIconFile), sin su plugin del Dock (lee las preferencias de
-  # Ghostty) y sin sus servicios ni tipos exportados (los duplicaría).
+  # Ghostty) y sin sus servicios ni tipos exportados (los duplicaría). Uno a
+  # uno: la Ghostty compilada (scripts/build-ghostty.sh) no trae las mismas
+  # claves que la oficial.
+  local key
+  for key in CFBundleIconName NSDockTilePlugIn NSServices UTExportedTypeDeclarations SUEnableAutomaticChecks; do
+    $PB -c "Delete :$key" $info >/dev/null 2>&1 || true
+  done
   $PB -c "Set :CFBundleIdentifier $app_id" \
       -c "Set :CFBundleName $app_name" \
       -c "Set :CFBundleDisplayName $app_name" \
       -c "Set :CFBundleExecutable vkTERM" \
       -c "Set :CFBundleIconFile vkterm" \
-      -c "Delete :CFBundleIconName" \
-      -c "Delete :NSDockTilePlugIn" \
-      -c "Delete :NSServices" \
-      -c "Delete :UTExportedTypeDeclarations" \
       -c "Add :SUEnableAutomaticChecks bool false" \
       -c "Add :VKTermHome string $vkterm_home" \
       -c "Add :VKTermGhosttyVersion string $version" \
+      -c "Add :VKTermGhosttySource string $ghostty_app" \
       -c "Add :VKTermBuild string $wanted" \
       $info
   rm -rf $tmp/Contents/PlugIns/DockTilePlugin.plugin
@@ -145,7 +162,12 @@ install_app() {
   rm -rf $app
   mv $tmp $app
   $LSREGISTER -f $app >/dev/null 2>&1 || true
-  say "creada $app (Ghostty $version)."
+  if [[ $ghostty_app == $patched_app ]]; then
+    say "creada $app (Ghostty $version, con los parches de vkTERM)."
+  else
+    say "creada $app (Ghostty $version, sin los parches de vkTERM: sobre el IDE se verá"
+    say "el indicador «⌨ vkterm» de Ghostty; scripts/build-ghostty.sh lo compila sin él)."
+  fi
 }
 
 link_command() {
@@ -166,6 +188,7 @@ status_app() {
   local built=$(plist_value $info VKTermGhosttyVersion) home=$(plist_value $info VKTermHome)
   print "$app_name.app: $app"
   print "  Ghostty de la copia: $built · instalado: ${ghostty:-no encontrado}"
+  print "  origen: $(plist_value $info VKTermGhosttySource)"
   print "  repositorio: $home"
   local ok=0
   if [[ $(plist_value $info VKTermBuild) != $(stamp) ]]; then

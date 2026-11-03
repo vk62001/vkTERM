@@ -106,6 +106,9 @@ impl Palette {
             close_self();
             return false;
         }
+        if self.floating.theme(&event) {
+            return true;
+        }
         match event {
             Event::RunCommandResult(code, stdout, _, context)
                 if context.get("vkterm").map(String::as_str) == Some("files") =>
@@ -246,29 +249,19 @@ impl Palette {
     }
 
     pub fn render(&mut self, rows: usize, cols: usize) {
+        let palette = self.floating.palette;
+        floating::frame(rows, cols, self.title(), HINT, &palette);
         let x = FRAME + PAD_X;
         let width = cols.saturating_sub(2 * x);
         if width < 8 || rows < 2 * FRAME + 2 {
             return;
         }
-        // Línea de entrada: "› " y lo escrito, con el cursor; sin texto, la ayuda.
         let (prompt, placeholder) = if self.commands_mode() {
             (">", "Escribe un comando")
         } else {
             ("›", "Buscar archivos por nombre")
         };
-        let query = self.query().to_string();
-        let line = if query.is_empty() {
-            format!("{prompt} ▏{placeholder}")
-        } else {
-            format!("{prompt} {query}▏")
-        };
-        let line = crate::fit(&line, width);
-        let mut text = Text::new(&line).color_range(2, ..1);
-        if query.is_empty() {
-            text = text.dim_range(3..);
-        }
-        print_text_with_coordinates(text, x, FRAME, Some(width), Some(1));
+        print!("{}", floating::input_line(prompt, self.query(), placeholder, width, &palette).render(x, FRAME));
 
         let list_rows = rows.saturating_sub(2 * FRAME + 1);
         let keys_width = COMMANDS.iter().map(|c| c.keys.chars().count()).max().unwrap_or(0);
@@ -280,8 +273,9 @@ impl Palette {
                     (_, 0, true) => "Sin resultados",
                     _ => "",
                 };
-                let blank = crate::fit(message, width);
-                print_text_with_coordinates(Text::new(&blank).dim_all(), x, FRAME + 1 + y, Some(width), Some(1));
+                let mut line = floating::row(message, width, &palette);
+                line.fg(0..width, palette.quick_description);
+                print!("{}", line.render(x, FRAME + 1 + y));
                 continue;
             };
             let (label, keys) = if self.commands_mode() {
@@ -292,22 +286,20 @@ impl Palette {
             let label_width = if self.commands_mode() { width.saturating_sub(keys_width + 2) } else { width };
             let shown = crate::fit(label, label_width);
             let shown_chars = shown.chars().count();
-            let line = if self.commands_mode() {
-                format!("{shown}  {keys:>keys_width$}")
-            } else {
-                shown
-            };
-            let indices: Vec<usize> = m.indices.iter().copied().filter(|&i| i < label_width.min(shown_chars)).collect();
-            let mut text = Text::new(&line).color_indices(0, indices);
+            let text = if self.commands_mode() { format!("{shown}  {keys:>keys_width$}") } else { shown };
+            let mut line = floating::row(&text, width, &palette);
+            let selected = i == self.selected;
+            if selected {
+                line.paint(0..width, |_| palette.quick_selection);
+            }
             if self.commands_mode() {
-                text = text.dim_range(label_width + 2..);
+                line.fg(label_width + 2..width, if selected { palette.quick_selection.fg } else { palette.keybinding });
             }
-            if i == self.selected {
-                text = text.selected();
-            }
-            print_text_with_coordinates(text, x, FRAME + 1 + y, Some(width), Some(1));
+            let indices: Vec<usize> = m.indices.iter().copied().filter(|&i| i < label_width.min(shown_chars)).collect();
+            let highlight = if selected { palette.quick_selection_highlight } else { palette.quick_highlight };
+            line.highlight(&indices, highlight);
+            print!("{}", line.render(x, FRAME + 1 + y));
         }
-        floating::frame(rows, cols, self.title(), HINT);
     }
 }
 

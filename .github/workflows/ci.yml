@@ -1,5 +1,5 @@
-# vkTERM — integración continua: tests y compilación del plugin, y
-# configuración de Zellij válida.
+# vkTERM — integración continua: temas generados al día, tests y compilación
+# del plugin, y configuración de Zellij válida.
 #
 # Las pruebas de humo (scripts/smoke-test.py) necesitan Zellij, Micro y, con
 # --ghostty, una sesión gráfica de macOS: se ejecutan en local antes de cada
@@ -15,6 +15,20 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+
+      - name: Temas generados al día y tests del generador
+        run: |
+          python3 scripts/gen-themes.py --check
+          python3 -m unittest scripts/test_gen_themes.py
+
+      - name: Tests de bin/vkterm-agent (⌘V con una imagen en el modo terminal)
+        run: python3 -m unittest scripts/test_vkterm_agent.py
+
+      - name: Tests de bin/vkterm-recent («Abrir reciente», ⌘O, en el modo terminal)
+        run: python3 -m unittest scripts/test_vkterm_recent.py
+
+      - name: Tests de bin/vkterm-git (Control de código fuente, ⌃⇧G)
+        run: python3 -m unittest scripts/test_vkterm_git.py
 
       - name: Target wasm32-wasip1
         run: rustup target add wasm32-wasip1

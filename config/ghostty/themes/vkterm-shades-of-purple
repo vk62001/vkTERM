@@ -1,0 +1,22 @@
+# Shades of Purple. Generado por scripts/gen-themes.py: no editar.
+background = #2d2b55
+foreground = #ffffff
+cursor-color = #fad000
+cursor-text = #2d2b55
+selection-background = #7448b0
+palette = 0=#000000
+palette = 1=#e53938
+palette = 2=#3ad900
+palette = 3=#fad000
+palette = 4=#7857fe
+palette = 5=#ff2c70
+palette = 6=#80fcff
+palette = 7=#ffffff
+palette = 8=#5c5c61
+palette = 9=#e53938
+palette = 10=#3ad900
+palette = 11=#fad000
+palette = 12=#6943ff
+palette = 13=#fb94ff
+palette = 14=#80fcff
+palette = 15=#ffffff

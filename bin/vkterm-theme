@@ -1,15 +1,19 @@
 #!/bin/zsh
 # vkTERM — tema de color guardado y su aplicación en vivo (⌘K ⌘T).
 #
-#   vkterm-theme current                          id del tema guardado (vacío: el predeterminado)
-#   vkterm-theme set ID GHOSTTY ZELLIJ MICRO      lo guarda y cambia Ghostty y Micro
-#   vkterm-theme value CLAVE                      zellij o micro del tema guardado
-#   vkterm-theme reload                           Ghostty relee la configuración (⌘⇧, en el IDE)
+#   vkterm-theme current          id del tema guardado (vacío: el predeterminado)
+#   vkterm-theme set ID           lo guarda y cambia Ghostty (Micro lo sigue solo)
+#   vkterm-theme value CLAVE      zellij o micro: el nombre del tema guardado
+#   vkterm-theme reload           Ghostty relee la configuración (⌘⇧, en el IDE)
+#   vkterm-theme sync             theme.ghostty con el tema guardado (al abrir el IDE)
 #
-# Lo usa el plugin vkterm (la tabla de temas está en
-# plugins/vkterm/src/themes.rs); el tema de Zellij lo cambia el propio plugin.
-# El estado vive en config/local (o VKTERM_STATE_DIR), fuera de git:
-#   theme           id, zellij y micro del tema elegido
+# Cada tema (config/themes/themes.json) tiene, con el nombre vkterm-<id>, un
+# tema de Ghostty, uno de Zellij y un esquema de Micro (scripts/gen-themes.py).
+# Lo usa el plugin vkterm; el tema de Zellij lo cambia el propio plugin y el
+# de Micro, el plugin Lua de Micro (config/micro/plugins/vkterm), que vigila
+# el archivo `theme`. El estado vive en config/local (o VKTERM_STATE_DIR),
+# fuera de git:
+#   theme           id del tema elegido
 #   theme.ghostty   lo incluye config/ghostty/vkterm.ghostty
 emulate -L zsh
 setopt no_unset pipe_fail
@@ -17,14 +21,25 @@ setopt no_unset pipe_fail
 vkterm_home=${0:A:h:h}
 state=${VKTERM_STATE_DIR:-$vkterm_home/config/local}
 
-value() {
+saved_id() {
   [[ -f $state/theme ]] || return 0
-  sed -n "s/^$1=//p" $state/theme
+  sed -n 's/^id=//p' $state/theme
+}
+
+# Nombre del tema de Zellij y del esquema de Micro: el del guardado, si
+# existe; si no (o no hay ninguno guardado), el predeterminado.
+value() {
+  local id=$(saved_id)
+  if [[ -z $id || ! -f $vkterm_home/config/micro/colorschemes/vkterm-$id.micro ]]; then
+    id=$(sed -n 's/^ *"default": *"\([^"]*\)".*/\1/p' $vkterm_home/config/themes/themes.json)
+  fi
+  print -r -- "vkterm-$id"
 }
 
 # Ghostty que muestra esta sesión: se sube por los procesos padre de sus
-# clientes de Zellij. SIGUSR2 le hace releer la configuración: todas sus
-# ventanas cambian de tema.
+# clientes de Zellij (o, sin sesión, por los de este proceso: ⌘+ en el prompt
+# del modo terminal, bin/vkterm-font). SIGUSR2 le hace releer la
+# configuración: todas sus ventanas cambian de tema.
 #
 # Al recargar, Ghostty vacía las tablas de atajos: las pestañas en modo IDE
 # volverían al modo terminal. bin/vkterm-surface les devuelve la suya cuando
@@ -32,9 +47,11 @@ value() {
 # nada). Sin segundo plano: Zellij termina los procesos que deja un comando
 # del plugin, y el plugin no espera este resultado.
 reload_ghostty() {
-  [[ -n ${ZELLIJ_SESSION_NAME:-} ]] || return 0
-  local pid comm reloaded=0
-  for pid in $(pgrep -f -- "zellij .*(--session|attach) $ZELLIJ_SESSION_NAME( |\$)"); do
+  local pid comm reloaded=0 starts=($$)
+  if [[ -n ${ZELLIJ_SESSION_NAME:-} ]]; then
+    starts=($(pgrep -f -- "zellij .*(--session|attach) $ZELLIJ_SESSION_NAME( |\$)"))
+  fi
+  for pid in $starts; do
     while (( pid > 1 )); do
       comm=$(ps -o comm= -p $pid 2>/dev/null) || break
       if [[ ${comm:t} == ghostty ]]; then
@@ -55,32 +72,41 @@ reload_ghostty() {
 
 case ${1:-} in
   current)
-    value id
+    saved_id
     ;;
   value)
-    value ${2:?clave}
+    [[ ${2:-} == (zellij|micro) ]] || { print -u2 "uso: vkterm-theme value zellij|micro"; exit 2; }
+    value
     ;;
   reload)
     reload_ghostty
     ;;
-  set)
-    (( $# == 5 )) || { print -u2 "uso: vkterm-theme set ID GHOSTTY ZELLIJ MICRO"; exit 2; }
-    id=$2 ghostty=$3 zellij=$4 micro=$5
-    previous_micro=$(value micro)
-    mkdir -p $state
-    print -l "id=$id" "zellij=$zellij" "micro=$micro" > $state/theme
-    # Los temas propios (config/ghostty/themes) se indican por ruta.
-    if [[ -f $vkterm_home/config/ghostty/themes/$ghostty ]]; then
-      ghostty=$vkterm_home/config/ghostty/themes/$ghostty
-    fi
-    print -r -- "theme = $ghostty" > $state/theme.ghostty
-    reload_ghostty
-    if [[ $micro != ${previous_micro:-vkterm} ]]; then
-      vkterm-micro "set colorscheme $micro" || true
+  sync)
+    # Antes de 0.3.0, theme.ghostty tenía el nombre de un tema de Ghostty;
+    # ahora apunta al de vkTERM del tema guardado. Ghostty lo lee al recargar
+    # o al abrir la app.
+    id=$(saved_id)
+    ghostty=$vkterm_home/config/ghostty/themes/vkterm-$id
+    [[ -n $id && -f $ghostty ]] || exit 0
+    line="theme = $ghostty"
+    if [[ ! -f $state/theme.ghostty || $(<$state/theme.ghostty) != $line ]]; then
+      print -r -- $line > $state/theme.ghostty
     fi
     ;;
+  set)
+    # Las sesiones de antes de 0.3.0 mandan también GHOSTTY ZELLIJ MICRO: se
+    # ignoran, los nombres salen del id.
+    id=${2:?uso: vkterm-theme set ID}
+    ghostty=$vkterm_home/config/ghostty/themes/vkterm-$id
+    [[ -f $ghostty ]] || { print -u2 "vkterm-theme: no existe el tema $id"; exit 1; }
+    mkdir -p $state
+    # Atómico: el plugin de Micro lo lee mientras tanto.
+    print -r -- "id=$id" > $state/theme.tmp && mv $state/theme.tmp $state/theme
+    print -r -- "theme = $ghostty" > $state/theme.ghostty
+    reload_ghostty
+    ;;
   *)
-    print -u2 "uso: vkterm-theme current | set ID GHOSTTY ZELLIJ MICRO | value CLAVE | reload"
+    print -u2 "uso: vkterm-theme current | set ID | value zellij|micro | reload | sync"
     exit 2
     ;;
 esac

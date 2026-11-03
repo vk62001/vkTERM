@@ -249,6 +249,17 @@ impl Tree {
         self.selected.clone()
     }
 
+    /// Selecciona `path` y despliega sus carpetas, como VS Code con un archivo
+    /// recién creado. Devuelve esas carpetas, de la raíz hacia dentro: hay que
+    /// volver a leerlas, porque el archivo (y quizá alguna carpeta) es nuevo.
+    pub fn reveal(&mut self, path: &Path) -> Vec<PathBuf> {
+        let mut dirs: Vec<PathBuf> = path.ancestors().skip(1).map(Path::to_path_buf).collect();
+        dirs.reverse();
+        self.expanded.extend(dirs.iter().filter(|d| !d.as_os_str().is_empty()).cloned());
+        self.selected = Some(path.to_path_buf());
+        dirs
+    }
+
     /// Vuelve a desplegar las carpetas de la memoria y la selección. Devuelve
     /// las carpetas que hay que leer del disco, de fuera hacia dentro: cada
     /// una se ve cuando está leída la anterior. Las que ya no existen las
@@ -385,6 +396,16 @@ mod tests {
         t.forget(Path::new("vieja")); // el plugin no pudo leerla
         assert!(t.expanded_dirs().is_empty());
         assert_eq!(t.selected().unwrap().path, PathBuf::from("Build"));
+    }
+
+    #[test]
+    fn mostrar_un_archivo_nuevo() {
+        let mut t = demo();
+        let to_load = t.reveal(Path::new("src/app/nuevo.rs"));
+        assert_eq!(to_load, [PathBuf::from(""), PathBuf::from("src"), PathBuf::from("src/app")]);
+        t.set_listing(Path::new("src/app"), entries(&[("nuevo.rs", false)]));
+        assert_eq!(names(&t)[..4], ["Build", "src", "  app", "    nuevo.rs"]);
+        assert_eq!(t.selected().unwrap().path, PathBuf::from("src/app/nuevo.rs"));
     }
 
     #[test]

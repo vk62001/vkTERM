@@ -2,7 +2,8 @@
 //! "Keyboard Shortcuts" de Unity (unity/shortcuts): categorías apiladas en
 //! columnas de tres, separadores entre ellas y, en cada fila, el atajo a la
 //! izquierda y la descripción a la derecha. Cada columna toma el ancho de su
-//! texto más largo. Si no caben las columnas, todo va en una sola.
+//! texto más largo. Si no caben las columnas, todo va en una sola. Las teclas
+//! van en etiquetas, como en VS Code (`keycaps`).
 use std::ops::Range;
 
 pub struct Category {
@@ -34,6 +35,7 @@ pub const CATEGORIES: &[Category] = &[
             ("⌘⌥←  ⌘⌥→", "Pestaña anterior / siguiente"),
             ("⌃⇧Tab  ⌃Tab", "Pestaña anterior / siguiente"),
             ("⌘W", "Cerrar la pestaña"),
+            ("⌘N", "Nuevo archivo, en la carpeta del explorador"),
             ("⌘P", "Abrir un archivo por nombre (búsqueda difusa)"),
             ("⌘⇧P", "Paleta de comandos"),
             ("⌘S", "Guardar"),
@@ -68,8 +70,9 @@ pub const CATEGORIES: &[Category] = &[
     Category {
         name: "Ventana",
         entries: &[
+            ("⌘O", "Abrir una carpeta reciente (⇧Enter: ventana nueva)"),
             ("⌘K  F", "Cerrar la carpeta y volver al terminal"),
-            ("⌘T  ⌘N", "Pestaña / ventana nueva en modo terminal"),
+            ("⌘T  ⌘⇧N", "Pestaña / ventana nueva en modo terminal"),
             ("⌘⇧,", "Recargar la configuración de Ghostty"),
             ("Ctrl g", "Modo normal de Zellij (Esc vuelve a LOCKED)"),
             ("Ctrl g  p", "Paneles: n nuevo, f ampliar"),
@@ -84,7 +87,20 @@ pub const CATEGORIES: &[Category] = &[
             ("⌥ + tecla", "Los demás caracteres: [ ] { } | \\ ~"),
             ("⌥←  ⌥→", "Palabra anterior / siguiente en el editor"),
             ("⌘K  ⌘T", "Cambiar el tema de color"),
+            ("⌘K  ⌘L", "Cambiar la fuente"),
+            ("⌘+  ⌘-  ⌘0", "Tamaño de letra: más, menos, el normal"),
             ("⌘K  ⌘S", "Mostrar u ocultar esta ventana"),
+        ],
+    },
+    Category {
+        name: "Control de código fuente",
+        entries: &[
+            ("⌃⇧G", "Ver los cambios de git y los conflictos"),
+            ("⌘⇧E", "Volver al explorador"),
+            ("⌘Enter", "Commit (también Enter en el mensaje)"),
+            ("Espacio", "Preparar / quitar el archivo"),
+            ("Enter", "Diferencias del archivo (q cierra)"),
+            ("→  ⌫", "Abrir el archivo / descartar sus cambios"),
         ],
     },
 ];
@@ -128,6 +144,27 @@ impl Line {
         let missing = width.saturating_sub(self.width());
         self.text.push_str(&" ".repeat(missing));
     }
+
+    /// Añade otra fila al final, con sus tramos.
+    fn append(&mut self, other: &Line) {
+        let start = self.width();
+        self.text.push_str(&other.text);
+        self.spans.extend(other.spans.iter().map(|(s, r)| (*s, r.start + start..r.end + start)));
+    }
+}
+
+/// Las teclas de un atajo en etiquetas, como las de VS Code: una por
+/// combinación (" ⌘K ", " Ctrl g "), separadas por una columna. En CATEGORIES,
+/// dos espacios separan las combinaciones ("⌘1  ⌘2", "⌘K  Z").
+fn keycaps(keys: &str) -> Line {
+    let mut line = Line::default();
+    for (i, chord) in keys.split("  ").enumerate() {
+        if i > 0 {
+            line.push(" ", None);
+        }
+        line.push(&format!(" {chord} "), Some(Style::Key));
+    }
+    line
 }
 
 fn chars(text: &str) -> usize {
@@ -137,7 +174,7 @@ fn chars(text: &str) -> usize {
 /// Filas de una columna de categorías y su ancho.
 fn column(categories: &[Category]) -> (Vec<Line>, usize) {
     let entries = categories.iter().flat_map(|c| c.entries.iter());
-    let key_width = entries.clone().map(|(key, _)| chars(key)).max().unwrap_or(0);
+    let key_width = entries.clone().map(|(key, _)| keycaps(key).width()).max().unwrap_or(0);
     let width = entries
         .map(|(_, description)| key_width + KEY_GAP + chars(description))
         .chain(categories.iter().map(|c| chars(c.name)))
@@ -154,8 +191,7 @@ fn column(categories: &[Category]) -> (Vec<Line>, usize) {
         heading.push(category.name, Some(Style::Heading));
         lines.push(heading);
         for (key, description) in category.entries {
-            let mut line = Line::default();
-            line.push(key, Some(Style::Key));
+            let mut line = keycaps(key);
             line.pad_to(key_width + KEY_GAP);
             line.push(description, None);
             lines.push(line);
@@ -165,15 +201,27 @@ fn column(categories: &[Category]) -> (Vec<Line>, usize) {
 }
 
 /// Filas de la ventana para un ancho de contenido dado: columnas de
-/// PER_COLUMN categorías si caben, si no una sola columna.
+/// PER_COLUMN categorías si caben; si no, dos (las PER_COLUMN primeras y el
+/// resto); si tampoco, una sola.
 pub fn layout(max_width: usize) -> Vec<Line> {
-    let columns: Vec<_> = CATEGORIES.chunks(PER_COLUMN).map(column).collect();
+    let split = PER_COLUMN.min(CATEGORIES.len());
+    let options: [Vec<&[Category]>; 2] =
+        [CATEGORIES.chunks(PER_COLUMN).collect(), vec![&CATEGORIES[..split], &CATEGORIES[split..]]];
+    options
+        .iter()
+        .find_map(|groups| side_by_side(groups, max_width))
+        .unwrap_or_else(|| column(CATEGORIES).0)
+}
+
+/// Las columnas una al lado de otra, si caben en `max_width`.
+fn side_by_side(groups: &[&[Category]], max_width: usize) -> Option<Vec<Line>> {
+    let columns: Vec<_> = groups.iter().map(|g| column(g)).collect();
     let total = columns.iter().map(|(_, w)| w).sum::<usize>() + COLUMN_GAP * (columns.len() - 1);
     if total > max_width {
-        return column(CATEGORIES).0;
+        return None;
     }
     let height = columns.iter().map(|(lines, _)| lines.len()).max().unwrap_or(0);
-    (0..height)
+    let lines = (0..height)
         .map(|row| {
             let mut line = Line::default();
             let mut offset = 0;
@@ -183,17 +231,15 @@ pub fn layout(max_width: usize) -> Vec<Line> {
                 }
                 line.pad_to(offset);
                 if let Some(cell) = lines.get(row) {
-                    let start = line.width();
-                    line.text.push_str(&cell.text);
-                    line.spans
-                        .extend(cell.spans.iter().map(|(s, r)| (*s, r.start + start..r.end + start)));
+                    line.append(cell);
                 }
                 offset += width;
             }
             line.text = line.text.trim_end().to_string();
             line
         })
-        .collect()
+        .collect();
+    Some(lines)
 }
 
 #[cfg(test)]
@@ -205,19 +251,30 @@ mod tests {
     }
 
     #[test]
-    fn dos_columnas_de_tres_categorias_si_caben() {
+    fn columnas_de_tres_categorias_si_caben() {
         let lines = layout(200);
         assert!(lines[0].text.starts_with("Paneles"));
         assert!(lines[0].text.contains("Agentes y Shell"));
+        assert!(lines[0].text.contains("Control de código fuente"));
         assert!(lines.iter().all(|l| l.width() <= 200));
         let names: Vec<_> = CATEGORIES.iter().map(|c| c.name).collect();
         assert!(!lines.iter().any(|l| l.text.trim() == names[3]), "Agentes y Shell va en la segunda columna");
     }
 
     #[test]
+    fn si_no_caben_tres_columnas_van_dos() {
+        let three = layout(200).iter().map(Line::width).max().unwrap();
+        let lines = layout(three - 1);
+        assert!(lines[0].text.starts_with("Paneles") && lines[0].text.contains("Agentes y Shell"));
+        assert!(!lines[0].text.contains("Control de código fuente"));
+        assert!(lines.iter().any(|l| l.text.trim_end().ends_with("Control de código fuente")));
+    }
+
+    #[test]
     fn una_sola_columna_si_no_caben() {
         let wide = layout(200);
-        let width = wide.iter().map(Line::width).max().unwrap();
+        let two = layout(wide.iter().map(Line::width).max().unwrap() - 1);
+        let width = two.iter().map(Line::width).max().unwrap();
         let lines = layout(width - 1);
         let headings: Vec<_> = lines
             .iter()
@@ -234,7 +291,8 @@ mod tests {
             let all = text(&layout(width));
             for category in CATEGORIES {
                 for (key, description) in category.entries {
-                    assert!(all.contains(key) && all.contains(description), "{key}");
+                    let keys = key.split_whitespace().all(|k| all.contains(k));
+                    assert!(keys && all.contains(description), "{key}");
                 }
             }
         }
@@ -243,16 +301,24 @@ mod tests {
     #[test]
     fn el_atajo_va_resaltado_y_las_descripciones_alineadas() {
         let lines = layout(200);
-        let row = lines.iter().find(|l| l.text.starts_with("⌘B ")).unwrap();
+        let row = lines.iter().find(|l| l.text.starts_with(" ⌘B ")).unwrap();
         let (style, range) = row.spans[0].clone();
         assert_eq!(style, Style::Key);
-        assert_eq!(range, 0..2);
+        assert_eq!(range, 0..4);
         let column_of = |prefix: &str, description: &str| {
             let line = lines.iter().find(|l| l.text.starts_with(prefix)).unwrap();
             let byte = line.text.find(description).unwrap();
             line.text[..byte].chars().count()
         };
-        assert_eq!(column_of("⌘B ", "Mostrar"), column_of("⌘⌥↑", "Foco al panel"));
+        assert_eq!(column_of(" ⌘B ", "Mostrar"), column_of(" ⌘⌥↑", "Foco al panel"));
+    }
+
+    #[test]
+    fn cada_combinacion_en_su_etiqueta() {
+        let line = keycaps("Ctrl g  p");
+        assert_eq!(line.text, " Ctrl g   p ");
+        assert_eq!(line.spans, [(Style::Key, 0..8), (Style::Key, 9..12)]);
+        assert_eq!(keycaps("⌘S").spans, [(Style::Key, 0..4)]);
     }
 
     #[test]
@@ -262,3 +328,4 @@ mod tests {
         assert_eq!(rules, 1);
     }
 }
+

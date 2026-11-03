@@ -1,0 +1,30 @@
+{
+  "//": "Temas de ⌘K ⌘T. scripts/gen-themes.py genera, para cada uno, los archivos de Ghostty, Micro, Zellij y el plugin. kind: dark, light, hc-dark o hc-light. inactive: colores del atenuado de los paneles sin foco (si se omite, se calculan); dim: false para no atenuar. El orden es el de la tabla del plugin; el selector los agrupa como VS Code.",
+  "default": "catppuccin-mocha",
+  "themes": [
+    {"id": "catppuccin-mocha", "name": "Catppuccin Mocha", "kind": "dark", "source": "catppuccin/mocha.json", "inactive": {"fg": "#6c7086", "bg": "#11111b"}},
+    {"id": "catppuccin-latte", "name": "Catppuccin Latte", "kind": "light", "source": "catppuccin/latte.json", "inactive": {"fg": "#9ca0b0", "bg": "#dce0e8"}},
+    {"id": "dark-modern", "name": "Dark Modern", "kind": "dark", "source": "microsoft/dark_modern.json", "inactive": {"fg": "#6e6e6e", "bg": "#141414"}},
+    {"id": "light-modern", "name": "Light Modern", "kind": "light", "source": "microsoft/light_modern.json", "inactive": {"fg": "#8b8b8b", "bg": "#ececec"}},
+    {"id": "dark-plus", "name": "Dark+", "kind": "dark", "source": "microsoft/dark_plus.json"},
+    {"id": "light-plus", "name": "Light+", "kind": "light", "source": "microsoft/light_plus.json"},
+    {"id": "dark-high-contrast", "name": "Dark High Contrast", "kind": "hc-dark", "source": "microsoft/hc_black.json", "dim": false},
+    {"id": "light-high-contrast", "name": "Light High Contrast", "kind": "hc-light", "source": "microsoft/hc_light.json", "dim": false},
+    {"id": "monokai", "name": "Monokai", "kind": "dark", "source": "microsoft/monokai-color-theme.json"},
+    {"id": "solarized-dark", "name": "Solarized Dark", "kind": "dark", "source": "microsoft/solarized-dark-color-theme.json"},
+    {"id": "solarized-light", "name": "Solarized Light", "kind": "light", "source": "microsoft/solarized-light-color-theme.json"},
+    {"id": "abyss", "name": "Abyss", "kind": "dark", "source": "microsoft/abyss-color-theme.json"},
+    {"id": "quiet-light", "name": "Quiet Light", "kind": "light", "source": "microsoft/quietlight-color-theme.json"},
+    {"id": "kimbie-dark", "name": "Kimbie Dark", "kind": "dark", "source": "microsoft/kimbie-dark-color-theme.json"},
+    {"id": "tomorrow-night-blue", "name": "Tomorrow Night Blue", "kind": "dark", "source": "microsoft/tomorrow-night-blue-color-theme.json"},
+    {"id": "dracula", "name": "Dracula", "kind": "dark", "source": "dracula/dracula.json", "inactive": {"fg": "#6272a4", "bg": "#1e1f29"}},
+    {"id": "nord", "name": "Nord", "kind": "dark", "source": "nord/nord-color-theme.json", "inactive": {"fg": "#616e88", "bg": "#242933"}},
+    {"id": "tokyo-night", "name": "Tokyo Night", "kind": "dark", "source": "tokyo-night/tokyo-night-color-theme.json", "inactive": {"fg": "#565f89", "bg": "#13141c"}},
+    {"id": "gruvbox-dark", "name": "Gruvbox Dark", "kind": "dark", "source": "gruvbox/gruvbox-dark-medium.json", "inactive": {"fg": "#7c6f64", "bg": "#1d2021"}},
+    {"id": "gruvbox-light", "name": "Gruvbox Light", "kind": "light", "source": "gruvbox/gruvbox-light-medium.json", "inactive": {"fg": "#a89984", "bg": "#ebdbb2"}},
+    {"id": "monokai-pro", "name": "Monokai Pro", "kind": "dark", "source": "vkterm/monokai-pro.json"},
+    {"id": "synthwave-84", "name": "SynthWave '84", "kind": "dark", "source": "synthwave84/synthwave-color-theme.json"},
+    {"id": "shades-of-purple", "name": "Shades of Purple", "kind": "dark", "source": "shades-of-purple/shades-of-purple-color-theme.json"},
+    {"id": "cobalt2", "name": "Cobalt2", "kind": "dark", "source": "cobalt2/cobalt2.json"}
+  ]
+}
