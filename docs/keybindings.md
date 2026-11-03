@@ -105,6 +105,8 @@ La columna *Verificado* indica cómo se probó cada atajo:
 | ⌘Z / ⌘⇧Z | Deshacer / rehacer en el editor | Alt u / Alt y → `edit` → Ctrl-Z / Ctrl-Y a Micro, solo con el foco en el editor | P, M |
 | ⌘A | Seleccionar todo en el editor | Alt a → `edit` → Ctrl-A | P, M |
 | ⌘F | Buscar en el archivo | Alt s → `edit` → Ctrl-F | P, M |
+| ⌥⌘F | Reemplazar en el archivo: pide qué buscar (la selección, si hay) y con qué, y si todas a la vez o una a una (Micro `replace`; sin distinguir mayúsculas, texto literal) | `super+alt+f=esc:&` → Alt & → `edit` → Ctrl-E `vkterm.replace` (plugin Lua) | P, M |
+| ⌘⇧F | Buscar en los archivos: la vista «Buscar» de la barra lateral (ripgrep, `bin/vkterm-search`). Escribir busca; Tab muestra el campo de reemplazo y Enter en él reemplaza en todos los archivos tras confirmar; Ctrl t / w / r: mayúsculas, palabras, regex; Enter en una coincidencia abre el archivo en esa línea; ⌘⇧E vuelve al explorador | `super+shift+f=esc:%` → Alt % → `show_view search` | P, M |
 | ⌘X | Cortar en el editor (sin selección, la línea) | Alt x → `edit` → Ctrl-X (Cut\|CutLine) | P (no actúa en el shell), M |
 | ⌘C | Copiar: la selección de Ghostty y, en el editor, la de Micro (sin selección, la línea). Nunca envía Ctrl-C a un shell. | Acción de Ghostty encadenada con Alt c → `edit` → Ctrl-C (Copy\|CopyLine) | G (no interrumpe procesos), P, M |
 | ⌘V | Pegar. En Claude Code y Codex, si el portapapeles solo tiene una imagen, la adjunta (como su ⌃V). | Acción de Ghostty (bracketed paste) encadenada con Alt v → `paste`: con el foco en un agente, `osascript -e 'clipboard info'` y, si es solo una imagen, ⌃V a ese panel | G (Micro), P (Micro y shell), M |

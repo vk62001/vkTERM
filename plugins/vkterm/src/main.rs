@@ -36,6 +36,7 @@
 mod branches;
 mod confirm;
 mod contextmenu;
+mod find;
 mod floating;
 mod fonts;
 mod overlay;
@@ -58,6 +59,7 @@ use overlay::Overlay;
 use picker::Picker;
 use prompt::Prompt;
 use recent::Recent;
+use find::Find;
 use scm::Scm;
 use status::StatusBar;
 use vkterm::applier::{Applier, Steps};
@@ -104,6 +106,7 @@ enum View {
     #[default]
     Explorer,
     Scm,
+    Search,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -177,6 +180,7 @@ struct State {
     /// La vista de la barra lateral y la de Control de código fuente.
     view: View,
     scm: Scm,
+    find: Find,
 }
 
 enum Window {
@@ -384,6 +388,16 @@ impl ZellijPlugin for State {
                         self.scm.action_result(kind, code, &stdout, &stderr, &self.project);
                         true
                     }
+                    "search" => {
+                        let stderr = String::from_utf8_lossy(&stderr);
+                        self.find.result(code, &stdout, &stderr, &self.project);
+                        true
+                    }
+                    "replace" => {
+                        let stderr = String::from_utf8_lossy(&stderr);
+                        self.find.replace_result(code, &stdout, &stderr, &self.project);
+                        true
+                    }
                     _ => self.command_result(&ctx, &stdout),
                 }
             }
@@ -460,6 +474,10 @@ impl ZellijPlugin for State {
         let dim = if focused { None } else { self.inactive_look() };
         if self.view == View::Scm {
             self.scm.render(rows, cols, focused, &p, dim);
+            return;
+        }
+        if self.view == View::Search {
+            self.find.render(rows, cols, focused, &p, dim);
             return;
         }
         let base = dim.unwrap_or(p.sidebar);
@@ -577,6 +595,8 @@ impl State {
             // Las respuestas de la confirmación (src/confirm.rs) y de la
             // rama con la que comparar (src/branches.rs).
             "scm_answer" => self.scm.answer(),
+            // La confirmación de «Reemplazar en los archivos» (src/find.rs).
+            "search_answer" => self.find.answer(&self.project),
             "compare_branch" => {
                 self.scm.target = payload.trim().to_string();
                 self.scm.refresh(&self.project);
@@ -669,6 +689,10 @@ impl State {
             let request = self.scm.key(key);
             return self.scm_request(request);
         }
+        if self.view == View::Search {
+            let request = self.find.key(key, &self.project);
+            return self.find_request(request);
+        }
         let plain = key.has_no_modifiers();
         let page = self.list_height().max(1) as isize;
         let mut focus = true;
@@ -722,6 +746,10 @@ impl State {
             let request = self.scm.mouse(mouse);
             return self.scm_request(request);
         }
+        if self.view == View::Search {
+            let request = self.find.mouse(mouse);
+            return self.find_request(request);
+        }
         match mouse {
             Mouse::LeftClick(line, _) if line >= HEADER_ROWS as isize => {
                 let index = line as usize - HEADER_ROWS + self.tree.scroll;
@@ -747,6 +775,15 @@ impl State {
         true
     }
 
+    fn find_request(&mut self, request: find::Request) -> bool {
+        match request {
+            find::Request::Ignored => return false,
+            find::Request::Redraw => {}
+            find::Request::Open(file, line, column) => self.open_at(&file, line, column),
+        }
+        true
+    }
+
     fn scm_request(&mut self, request: scm::Request) -> bool {
         match request {
             scm::Request::Ignored => return false,
@@ -764,7 +801,14 @@ impl State {
     /// ⌘⇧E (explorer) y ⌃⇧G (scm): muestra la barra lateral con esa vista y
     /// le da el foco; en Control de código fuente, al mensaje del commit.
     fn show_view(&mut self, view: &str) {
-        let view = if view == "scm" { View::Scm } else { View::Explorer };
+        let view = match view {
+            "scm" => View::Scm,
+            "search" => View::Search,
+            _ => View::Explorer,
+        };
+        if view == View::Search {
+            self.find.focus_query();
+        }
         if view == View::Scm {
             self.scm.focus_message();
             if self.view != View::Scm {
@@ -781,6 +825,7 @@ impl State {
         match self.view {
             View::Explorer => EXPLORER_TITLE,
             View::Scm => scm::TITLE,
+            View::Search => find::TITLE,
         }
     }
 
@@ -794,6 +839,15 @@ impl State {
 
     /// Abre el archivo en una pestaña del editor central (bin/vkterm-open).
     fn open(&mut self, file: &Path, focus: bool) {
+        self.open_with(file, focus, 0, 0)
+    }
+
+    /// Lo mismo, llevando el cursor a `line`:`column` (0 = donde estaba).
+    fn open_at(&mut self, file: &Path, line: usize, column: usize) {
+        self.open_with(file, true, line, column)
+    }
+
+    fn open_with(&mut self, file: &Path, focus: bool, line: usize, column: usize) {
         if is_binary(&Path::new(HOST).join(file)) {
             let name = file.file_name().unwrap_or_default().to_string_lossy();
             self.status = Some(format!("{name}: binario, no se abre"));
@@ -805,6 +859,10 @@ impl State {
         }
         if !focus {
             env.insert("VKTERM_NO_FOCUS".to_string(), "1".to_string());
+        }
+        if line > 0 {
+            env.insert("VKTERM_LINE".to_string(), line.to_string());
+            env.insert("VKTERM_COLUMN".to_string(), column.max(1).to_string());
         }
         let path = self.project.join(file);
         run_command_with_env_variables_and_cwd(
@@ -949,17 +1007,19 @@ impl State {
     /// Micro: sin selección, la línea entera.
     fn edit(&mut self, action: &str) {
         let key = match action {
-            "undo" => 0x1a,
-            "redo" => 0x19,
-            "select_all" => 0x01,
-            "find" => 0x06,
-            "cut" => 0x18,
-            "copy" => 0x03,
+            "undo" => vec![0x1a],
+            "redo" => vec![0x19],
+            "select_all" => vec![0x01],
+            "find" => vec![0x06],
+            "cut" => vec![0x18],
+            "copy" => vec![0x03],
+            // Ctrl-E y el comando del plugin Lua (config/micro/plugins/vkterm).
+            "replace" => commands::editor_key("replace").unwrap_or_default().to_vec(),
             _ => return,
         };
         if let Some(editor) = self.terminal("Editor") {
             if self.focused_in(&[editor]) {
-                write_to_pane_id(vec![key], editor);
+                write_to_pane_id(key, editor);
             }
         }
     }
@@ -1391,6 +1451,7 @@ impl State {
         }
         if self.asked_theme {
             self.scm.tick(&self.project);
+            self.find.tick(&self.project);
         }
         if !self.restored || self.closing.is_some() {
             return;

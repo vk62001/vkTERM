@@ -7,6 +7,35 @@ Los cambios de cada versión de vkTERM. El formato sigue
 
 ## Sin publicar
 
+## 0.5.0 — 2026-11-03
+
+Buscar y reemplazar, como en VS Code.
+
+### Añadido
+
+- **Buscar en los archivos (⌘⇧F)**: una vista más de la barra lateral, junto
+  al explorador y Control de código fuente (⌘⇧E vuelve al explorador).
+  - Escribir busca en toda la carpeta (con ripgrep, que respeta `.gitignore`
+    y mira también los archivos ocultos como `.env`). Los resultados salen
+    agrupados por archivo, plegables, con la coincidencia resaltada.
+  - Ctrl t, Ctrl w y Ctrl r: distinguir mayúsculas, palabras completas y
+    expresión regular; las activas se marcan arriba a la derecha.
+  - Enter (o un clic) en una coincidencia abre el archivo en esa línea y
+    columna; en un archivo, pliega o despliega sus coincidencias.
+  - **Reemplazar en los archivos:** Tab muestra el campo de reemplazo y Enter
+    en él reescribe todos los archivos con coincidencias, tras confirmar
+    (con regex valen `$1`…). Pide ripgrep (`brew install ripgrep`); sin él,
+    solo busca, con grep. Los archivos abiertos en el editor con cambios sin
+    guardar hay que recargarlos.
+  - `bin/vkterm-search` (también en «Ver: Buscar en los archivos» de ⌘⇧P) y
+    `vkterm-open` entiende `VKTERM_LINE` y `VKTERM_COLUMN`.
+- **Reemplazar en el archivo (⌥⌘F)**, el Ctrl+H de VS Code: pide qué buscar
+  (la selección, si la hay) y con qué, y si reemplazar todas a la vez o una a
+  una (y: esta, n: saltar, Esc: parar). Es texto literal y no distingue
+  mayúsculas. También en ⌘⇧P: «Editor: Reemplazar en el archivo». (⌘F ya
+  buscaba en el archivo.)
+- `scripts/doctor.sh` comprueba ripgrep.
+
 ## 0.4.2 — 2026-11-03
 
 ### Añadido

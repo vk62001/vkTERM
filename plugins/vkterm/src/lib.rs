@@ -13,6 +13,7 @@ pub mod menu;
 pub mod newfile;
 pub mod question;
 pub mod quickpick;
+pub mod search;
 pub mod shortcuts;
 pub mod style;
 pub mod themes;

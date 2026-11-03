@@ -38,6 +38,8 @@ local micro = import("micro")
 local buffer = import("micro/buffer")
 local config = import("micro/config")
 local shell = import("micro/shell")
+local regexp = import("regexp")
+local util = import("micro/util")
 local util = import("micro/util")
 local goos = import("os")
 local time = import("time")
@@ -197,7 +199,33 @@ function postinit()
     remember()
 end
 
+-- Un argumento de la línea de comandos de Micro, entre comillas.
+local function quote(s)
+    return '"' .. s:gsub("\\", "\\\\"):gsub('"', '\\"') .. '"'
+end
+
 function init()
+    -- «Reemplazar» (⌥⌘F), como Ctrl+H de VS Code: pide qué buscar (la selección,
+    -- si la hay) y con qué reemplazarlo, y pregunta si todas a la vez o una a
+    -- una (y: esta, n: saltar, Esc: parar) con el «replace» de Micro. El texto es
+    -- literal y no distingue mayúsculas, como la búsqueda de VS Code.
+    config.MakeCommand("vkterm.replace", function(bp)
+        local selected = ""
+        if bp.Cursor:HasSelection() then
+            selected = util.String(bp.Cursor:GetSelection())
+            if selected:find("\n") then selected = "" end
+        end
+        micro.InfoBar():Prompt("Buscar: ", selected, "vkterm_find", nil, function(find, canceled)
+            if canceled or find == "" then return end
+            micro.InfoBar():Prompt("Reemplazar con: ", "", "vkterm_replace", nil, function(with, canceled2)
+                if canceled2 then return end
+                micro.InfoBar():YNPrompt("¿Reemplazar todas las coincidencias? (y: todas, n: una a una, Esc: cancelar)", function(all, canceled3)
+                    if canceled3 then return end
+                    bp:HandleCommand("replace " .. quote("(?i)" .. regexp.QuoteMeta(find)) .. " " .. quote((with:gsub("%$", "$$"))) .. (all and " -a" or ""))
+                end)
+            end)
+        end)
+    end, config.NoComplete)
     -- «Mostrar en Finder» del menú contextual: el archivo de esta pestaña.
     config.MakeCommand("vkterm.reveal", function(bp)
         local path = bp.Buf.AbsPath
