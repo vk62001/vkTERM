@@ -15,7 +15,7 @@ explorador de archivos,<br>editor con pestañas, Shell y agentes de IA
   <a href="https://github.com/vk62001/vkTERM/actions/workflows/ci.yml"><img src="https://github.com/vk62001/vkTERM/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-GPL--3.0--or--later-blue" alt="GPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/plataforma-macOS-lightgrey" alt="macOS">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/versi%C3%B3n-0.4.0-informational" alt="versión 0.4.0"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/versi%C3%B3n-0.4.1-informational" alt="versión 0.4.1"></a>
 </p>
 
 - **vkTERM.app** es tu terminal de todos los días (una copia local de Ghostty

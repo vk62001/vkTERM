@@ -7,6 +7,14 @@ Los cambios de cada versión de vkTERM. El formato sigue
 
 ## Sin publicar
 
+## 0.4.1 — 2026-11-03
+
+### Corregido
+
+- **`vkterm` no abría el IDE en la 0.4.0:** `bin/vkterm-workspace` copiaba mal
+  la configuración de Micro (faltaba un espacio en el `cp`) y salía con error;
+  como el shell borra la pantalla al terminar, el mensaje no se llegaba a leer.
+
 ## 0.4.0 — 2026-11-03
 
 ### Añadido
