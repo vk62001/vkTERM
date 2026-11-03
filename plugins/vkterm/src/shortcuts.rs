@@ -36,6 +36,7 @@ pub const CATEGORIES: &[Category] = &[
             ("⌃⇧Tab  ⌃Tab", "Pestaña anterior / siguiente"),
             ("⌘W", "Cerrar la pestaña"),
             ("⌘N", "Nuevo archivo, en la carpeta del explorador"),
+            ("⌘R", "Renombrar el archivo o carpeta seleccionado del explorador"),
             ("⌘P", "Abrir un archivo por nombre (búsqueda difusa)"),
             ("⌘⇧P", "Paleta de comandos"),
             ("⌘S", "Guardar"),

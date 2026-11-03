@@ -100,7 +100,7 @@ session="vk-${${name[1,$max_project]}%%-#}-${fingerprint}${suffix}"
 # arranque; config/micro/plug/ está en .gitignore.
 state=${VKTERM_STATE_DIR:-$vkterm_home/config/local}
 mkdir -p $state/micro/plug
-cp -R $vkterm_home/config/micro/{settings.json,bindings.json,colorschemes} $state/micro/
+cp -R $vkterm_home/config/micro/{settings.json,bindings.json,colorschemes,syntax}$state/micro/
 rm -rf $state/micro/plug/vkterm
 cp -R $vkterm_home/config/micro/plugins/vkterm $state/micro/plug/vkterm
 

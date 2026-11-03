@@ -15,7 +15,7 @@ explorador de archivos,<br>editor con pestañas, Shell y agentes de IA
   <a href="https://github.com/vk62001/vkTERM/actions/workflows/ci.yml"><img src="https://github.com/vk62001/vkTERM/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-GPL--3.0--or--later-blue" alt="GPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/plataforma-macOS-lightgrey" alt="macOS">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/versi%C3%B3n-0.3.0-informational" alt="versión 0.3.0"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/versi%C3%B3n-0.4.0-informational" alt="versión 0.4.0"></a>
 </p>
 
 - **vkTERM.app** es tu terminal de todos los días (una copia local de Ghostty
@@ -238,6 +238,7 @@ Claude Code y Codex, como en el IDE. En el **modo IDE**:
 | ⌘⌥← · ⌘⌥→ (o ⌃⇧Tab · ⌃Tab) | Pestaña anterior · siguiente del editor |
 | ⌘W | Cerrar la pestaña del editor |
 | ⌘N | Nuevo archivo: pide el nombre y lo crea en la carpeta seleccionada del explorador |
+| ⌘R | Renombrar: pide el nombre nuevo (con `/` lo mueve) para lo seleccionado en el explorador |
 | ⌘P | Abrir archivo por nombre (búsqueda difusa, como VS Code) |
 | ⌘⇧P | Paleta de comandos |
 | ⌘S | Guardar |

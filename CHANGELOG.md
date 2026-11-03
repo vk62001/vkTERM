@@ -7,8 +7,34 @@ Los cambios de cada versión de vkTERM. El formato sigue
 
 ## Sin publicar
 
+## 0.4.0 — 2026-11-03
+
 ### Añadido
 
+- **Comentarios atenuados en `.env` y JSON**, como en VS Code. Micro no
+  resalta los `.env` y su JSON no entiende comentarios, así que todo salía
+  del mismo color. Ahora `config/micro/syntax` aporta:
+  - `env.yaml`: `.env`, `.env.local`, `.env.*` y `*.env`. Las líneas
+    comentadas (`#OTRA=1`) y los comentarios tras un valor van en el color de
+    comentario del tema; la clave, el `=` y el valor (con sus `$VARIABLES`)
+    tienen el suyo;
+  - `json.yaml`: JSON con comentarios (`//` y `/* */`), como
+    `tsconfig.json` o `.vscode/settings.json`, también para `.jsonc`,
+    `.json5` y `.code-workspace`.
+
+  `bin/vkterm-workspace` copia la carpeta en cada arranque, así que se aplica
+  a todos los temas sin regenerar nada.
+
+- **Renombrar (⌘R)** el archivo o carpeta seleccionado del explorador, o
+  «Archivo: Renombrar…» en ⌘⇧P. VS Code usa F2, que no todos los teclados
+  tienen. La ventana es la de «Nuevo archivo» con el nombre actual escrito;
+  con `/` mueve a otra carpeta (la crea si no existe), no pisa nada que ya
+  exista y admite cambiar solo mayúsculas. Un archivo renombrado se abre con
+  su nombre nuevo; la pestaña del editor con el nombre viejo hay que cerrarla.
+- **Clic derecho en el explorador**, como en VS Code: selecciona la entrada y
+  abre junto al puntero un menú con Nuevo archivo… (⌘N), Renombrar… (⌘R),
+  mostrar u ocultar .git y la paleta de comandos. Es el mismo menú flotante
+  del editor, con otras entradas.
 - **Control de código fuente (⌃⇧G)**, como la vista "Source Control" de VS
   Code, en la misma barra lateral que el explorador (⌘⇧E vuelve a él; ⌘B
   oculta la barra con la vista que tenga):

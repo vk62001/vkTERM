@@ -11,7 +11,7 @@
 //     Alt u/y/a/s/x/c/v. Alt n/f/p/[/] y Alt+flechas quedan para Micro
 //     (multicursor, palabras, diff) y solo actúan en modo normal (tras Ctrl g).
 //   - Alt z (zoom), Alt 0..9, Alt , / ., Alt ;, Alt ?, Alt t, Alt q, Alt r,
-//     Alt d y Alt u/y/a/s/x/c/v (destinos de la capa ⌘ de Ghostty) son
+//     Alt d, Alt _ y Alt u/y/a/s/x/c/v (destinos de la capa ⌘ de Ghostty) son
 //     añadidos de vkTERM.
 //   - Se omiten la entrada "s" del modo session (zellij:share, servidor web) y
 //     "d" (Detach): la sesión dura lo que su pestaña de vkTERM.app.
@@ -270,6 +270,9 @@ keybinds clear-defaults=true {
         bind "Alt 9" { MessagePlugin "vkterm" { name "close_tab"; }; }
         // ⌘N: «Nuevo archivo…» en la carpeta seleccionada del explorador.
         bind "Alt d" { MessagePlugin "vkterm" { name "new_file"; }; }
+        // ⌘R: «Renombrar…» lo seleccionado en el explorador (VS Code usa F2,
+        // que no todos los teclados tienen).
+        bind "Alt _" { MessagePlugin "vkterm" { name "rename_file"; }; }
         // ⌘K F: cerrar la carpeta (pregunta si se perdería algo) y volver al
         // modo terminal.
         bind "Alt q" { MessagePlugin "vkterm" { name "close_folder"; }; }

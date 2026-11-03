@@ -1,4 +1,4 @@
-//! Menú contextual del editor (clic derecho), como el de VS Code
+//! Menú contextual del editor y del explorador (clic derecho), como el de VS Code
 //! (src/menu.rs): ↑ ↓ y Enter, o el ratón; Esc, un clic fuera o perder el
 //! foco lo cierran.
 //!
@@ -39,7 +39,8 @@ impl ContextMenu {
             return false;
         };
         self.pane = pane.to_string();
-        self.menu = Menu::new(menu::EDITOR);
+        // "explorer" en lugar del panel de Micro: el menú del explorador.
+        self.menu = Menu::new(if pane == "explorer" { menu::EXPLORER } else { menu::EDITOR });
         if !self.floating.open(TITLE) {
             // Otro clic derecho antes de que se cerrara: se mueve a su sitio.
             let (width, height) = self.menu.size();

@@ -154,6 +154,11 @@ keybind = vkterm/super+s=esc:OQ
 # carpeta seleccionada del explorador. ⌘⇧N abre una ventana (arriba).
 keybind = vkterm/super+n=esc:d
 
+# ⌘R: «Renombrar…» el archivo o carpeta seleccionado del explorador. VS Code
+# usa F2 (o Enter), que aquí no sirven: no todos los teclados tienen F2 y
+# Enter abre. En el modo terminal, ⌘R no hace nada especial.
+keybind = vkterm/super+r=esc:_
+
 # ⌘K ⌘S: ventana de atajos, como en VS Code (secuencia: ⌘K y después ⌘S).
 # Ghostty espera la segunda tecla sin límite de tiempo; si no es una de las
 # de abajo, envía las dos al programa. En el modo terminal ⌘K limpia la

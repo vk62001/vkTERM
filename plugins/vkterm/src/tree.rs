@@ -120,6 +120,13 @@ impl Tree {
         self.selected = rows.get(index).map(|r| r.path.clone());
     }
 
+    /// Selecciona la fila `index` sin activarla (clic derecho).
+    pub fn select_at(&mut self, index: usize) -> bool {
+        let rows = self.rows();
+        self.select_index(&rows, index);
+        index < rows.len()
+    }
+
     pub fn move_by(&mut self, delta: isize) {
         let rows = self.rows();
         if rows.is_empty() {

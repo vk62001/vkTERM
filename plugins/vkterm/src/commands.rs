@@ -21,6 +21,7 @@ const fn cmd(label: &'static str, keys: &'static str, message: &'static str, pay
 pub const COMMANDS: &[Command] = &[
     cmd("Archivo: Abrir archivo…", "⌘P", "palette_files", ""),
     cmd("Archivo: Nuevo archivo…", "⌘N", "new_file", ""),
+    cmd("Archivo: Renombrar…", "⌘R", "rename_file", ""),
     cmd("Archivo: Nuevo archivo de texto sin título", "", "editor_key", "new_tab"),
     cmd("Archivo: Guardar", "⌘S", "editor_key", "save"),
     cmd("Archivo: Abrir reciente…", "⌘O", "open_window", "recent"),

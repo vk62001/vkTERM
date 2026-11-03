@@ -543,6 +543,13 @@ impl State {
             // ⌘N: pide el nombre (src/prompt.rs) y lo crea.
             "new_file" => self.new_file(),
             "create_file" => self.create_file(Path::new(payload.trim())),
+            // ⌘R: pide el nombre nuevo (src/prompt.rs) y renombra.
+            "rename_file" => self.rename_file(),
+            "rename_to" => {
+                if let Some((old, new)) = payload.split_once('\t') {
+                    self.rename_to(Path::new(old), Path::new(new.trim()));
+                }
+            }
             "editor_key" => {
                 if let Some(bytes) = commands::editor_key(payload.trim()) {
                     self.send_to_editor(bytes, true);
@@ -719,6 +726,17 @@ impl State {
                 let action = self.tree.click(index);
                 self.status = None;
                 self.run(action, true);
+            }
+            // Como en VS Code, selecciona la entrada y abre su menú junto al puntero.
+            Mouse::RightClick(line, column) if line >= HEADER_ROWS as isize => {
+                let index = line as usize - HEADER_ROWS + self.tree.scroll;
+                self.tree.select_at(index);
+                self.status = None;
+                let me = self.panes.iter().find(|p| p.is_plugin && p.id == self.me);
+                let click = me.map_or((column, line as usize), |p| {
+                    (p.pane_content_x + column, p.pane_content_y + line as usize)
+                });
+                self.open_menu("explorer", menu::EXPLORER, click);
             }
             Mouse::ScrollUp(n) => self.tree.scroll_by(-(n as isize), self.list_height()),
             Mouse::ScrollDown(n) => self.tree.scroll_by(n as isize, self.list_height()),
@@ -971,13 +989,7 @@ impl State {
         let Some(pane) = self.panes.iter().find(|p| !p.is_plugin && !p.is_suppressed && p.id as usize == id) else {
             return;
         };
-        let tiled = self.panes.iter().filter(|p| !p.is_floating && !p.is_suppressed && p.is_selectable);
-        let area = (
-            tiled.clone().map(|p| p.pane_x + p.pane_columns).max().unwrap_or(0),
-            tiled.map(|p| p.pane_y + p.pane_rows).max().unwrap_or(0),
-        );
-        let size = Menu::default().size();
-        let (left, top) = menu::position((pane.pane_content_x + x, pane.pane_content_y + y), size, area);
+        let click = (pane.pane_content_x + x, pane.pane_content_y + y);
         let pane = pane.id;
         // El botón se suelta ya con el menú abierto y Zellij manda el «soltar»
         // al panel con el foco, el menú: sin él, Micro no haría caso del
@@ -985,6 +997,20 @@ impl State {
         write_to_pane_id(format!("\u{1b}[<2;{};{}m", x + 1, y + 1).into_bytes(), PaneId::Terminal(pane));
         focus_pane_with_id(PaneId::Terminal(pane), false, false);
         self.menu_pane = Some(pane);
+        self.open_menu(&pane.to_string(), menu::EDITOR, click);
+    }
+
+    /// Abre el menú contextual (src/contextmenu.rs) junto al puntero, dentro de
+    /// la zona de paneles. `target` es el panel de Micro o "explorer"; `click`,
+    /// la celda del clic en la ventana.
+    fn open_menu(&mut self, target: &str, entries: &'static [menu::Entry], click: (usize, usize)) {
+        let tiled = self.panes.iter().filter(|p| !p.is_floating && !p.is_suppressed && p.is_selectable);
+        let area = (
+            tiled.clone().map(|p| p.pane_x + p.pane_columns).max().unwrap_or(0),
+            tiled.map(|p| p.pane_y + p.pane_rows).max().unwrap_or(0),
+        );
+        let size = Menu::new(entries).size();
+        let (left, top) = menu::position(click, size, area);
         let coordinates = FloatingPaneCoordinates::new(
             Some(left.to_string()),
             Some(top.to_string()),
@@ -997,7 +1023,7 @@ impl State {
             .with_plugin_url("vkterm")
             .with_plugin_config(BTreeMap::from([("mode".to_string(), "menu".to_string())]))
             .new_plugin_instance_should_float(true)
-            .with_payload(format!("{pane} {left} {top}"));
+            .with_payload(format!("{target} {left} {top}"));
         if let Some(coordinates) = coordinates {
             message = message.with_floating_pane_coordinates(coordinates);
         }
@@ -1008,6 +1034,14 @@ impl State {
     /// (src/commands.rs) en el panel del clic, o la paleta de comandos.
     fn menu_action(&mut self, payload: &str) {
         let Some((pane, action)) = payload.split_once(' ') else { return };
+        if pane == "explorer" {
+            if matches!(action, "new_file" | "rename_file" | "toggle_excluded") {
+                self.dispatch(action, "");
+            } else if action == "command_palette" {
+                self.open_window("palette_commands");
+            }
+            return;
+        }
         let Some(pane) = pane.parse().ok().filter(|id| self.panes.iter().any(|p| !p.is_plugin && p.id == *id)) else {
             return;
         };
@@ -1025,6 +1059,50 @@ impl State {
         let row = self.tree.selected_path().and(self.tree.selected());
         let folder = newfile::folder(row.as_ref().map(|r| (r.path.as_path(), r.is_dir)));
         launch_window("new_file", "newfile", Some(folder.to_string_lossy().into_owned()));
+    }
+
+    /// ⌘R «Renombrar…» el archivo o carpeta seleccionado del explorador.
+    fn rename_file(&mut self) {
+        match self.tree.selected_path().and(self.tree.selected()) {
+            Some(row) => launch_window("rename_file", "newfile", Some(row.path.to_string_lossy().into_owned())),
+            None => self.status = Some("Selecciona en el explorador lo que quieras renombrar".to_string()),
+        }
+    }
+
+    /// De la ventana «Renombrar»: mueve en el disco, actualiza el explorador y
+    /// abre el archivo con su nombre nuevo. Una pestaña del editor con el
+    /// nombre viejo sigue abierta: hay que cerrarla (guardarla recrearía el
+    /// archivo viejo).
+    fn rename_to(&mut self, old: &Path, new: &Path) {
+        let (host_old, host_new) = (Path::new(HOST).join(old), Path::new(HOST).join(new));
+        let moved = host_new
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|_| std::fs::rename(&host_old, &host_new));
+        if let Err(error) = moved {
+            self.status = Some(format!("{}: {error}", old.display()));
+            return;
+        }
+        let was_dir = host_new.is_dir();
+        // Se vuelven a leer las carpetas de las dos puntas y las desplegadas
+        // bajo la vieja (si era una carpeta) se olvidan.
+        let mut stale: Vec<PathBuf> = self.tree.loaded_dirs().into_iter().filter(|d| d.starts_with(old)).collect();
+        stale.extend(old.parent().map(Path::to_path_buf));
+        for dir in stale {
+            if dir.starts_with(old) {
+                self.tree.forget(&dir);
+            } else {
+                self.load_dir(&dir);
+            }
+        }
+        for dir in self.tree.reveal(new) {
+            self.load_dir(&dir);
+        }
+        self.tree.keep_visible(self.list_height());
+        self.status = None;
+        if !was_dir {
+            self.open(new, true);
+        }
     }
 
     /// De la ventana «Nuevo archivo»: lo crea vacío (y sus carpetas), lo

@@ -29,6 +29,17 @@ pub const EDITOR: &[Entry] = &[
     item("Paleta de comandos…", "⌘⇧P", "command_palette"),
 ];
 
+/// El del explorador (clic derecho sobre una entrada). Las acciones son
+/// mensajes del controlador (src/main.rs, `dispatch`).
+pub const EXPLORER: &[Entry] = &[
+    item("Nuevo archivo…", "⌘N", "new_file"),
+    item("Renombrar…", "⌘R", "rename_file"),
+    Entry::Separator,
+    item("Mostrar u ocultar .git, .DS_Store…", "Ctrl h", "toggle_excluded"),
+    Entry::Separator,
+    item("Paleta de comandos…", "⌘⇧P", "command_palette"),
+];
+
 /// Margen a cada lado de las filas.
 pub const PAD: usize = 1;
 /// Separación mínima entre la etiqueta y el atajo.
@@ -143,6 +154,16 @@ pub fn position(click: (usize, usize), size: (usize, usize), area: (usize, usize
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn el_menu_del_explorador_tiene_atajos_que_existen() {
+        let shown: Vec<&str> = crate::commands::COMMANDS.iter().map(|c| c.keys).collect();
+        for entry in EXPLORER {
+            if let Entry::Item { keys, action, .. } = entry {
+                assert!(shown.contains(keys), "{action}: {keys} no está en commands.rs");
+            }
+        }
+    }
 
     #[test]
     fn tamano_con_marco_margen_y_atajos() {

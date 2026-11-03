@@ -31,6 +31,10 @@ pub enum Problem {
     Exists(PathBuf),
     /// Una de las carpetas del camino es un archivo.
     NotAFolder(PathBuf),
+    /// Al renombrar: el nombre es el mismo.
+    Unchanged,
+    /// Al renombrar una carpeta: el destino queda dentro de ella misma.
+    Inside,
 }
 
 impl Problem {
@@ -41,6 +45,8 @@ impl Problem {
             Problem::Invalid => format!("«{}» no es un nombre de archivo válido", name.trim()),
             Problem::Exists(path) => format!("Ya existe {}: elige otro nombre", path.display()),
             Problem::NotAFolder(path) => format!("{} es un archivo, no una carpeta", path.display()),
+            Problem::Unchanged => "Escribe un nombre distinto".to_string(),
+            Problem::Inside => "No se puede mover una carpeta dentro de sí misma".to_string(),
         }
     }
 }
@@ -70,6 +76,25 @@ pub fn target(folder: &Path, name: &str, kind: impl Fn(&Path) -> Option<bool>) -
     }
     if kind(&path).is_some() {
         return Err(Problem::Exists(path));
+    }
+    Ok(path)
+}
+
+/// A dónde iría `old` al renombrarlo a `name` (relativo a su carpeta, con `/`
+/// se mueve). Como en macOS, un cambio solo de mayúsculas es válido aunque el
+/// disco no distinga: ahí `kind` ya ve el archivo.
+pub fn rename_target(old: &Path, name: &str, kind: impl Fn(&Path) -> Option<bool>) -> Result<PathBuf, Problem> {
+    let folder = old.parent().unwrap_or(Path::new(""));
+    let only_case = |path: &Path| path != old && path.to_string_lossy().to_lowercase() == old.to_string_lossy().to_lowercase();
+    let path = match target(folder, name, |p| if p == old { None } else { kind(p) }) {
+        Err(Problem::Exists(path)) if only_case(&path) => path,
+        other => other?,
+    };
+    if path == old {
+        return Err(Problem::Unchanged);
+    }
+    if path.starts_with(old) {
+        return Err(Problem::Inside);
     }
     Ok(path)
 }
@@ -116,5 +141,16 @@ mod tests {
             Err(Problem::NotAFolder(PathBuf::from("README.md")))
         );
         assert!(Problem::Exists(PathBuf::from("src/main.rs")).message("main.rs").contains("src/main.rs"));
+    }
+
+    #[test]
+    fn renombra_en_su_carpeta_o_mueve() {
+        let old = Path::new("src/main.rs");
+        assert_eq!(rename_target(old, "lib.rs", kind), Ok(PathBuf::from("src/lib.rs")));
+        assert_eq!(rename_target(old, "ui/lib.rs", kind), Ok(PathBuf::from("src/ui/lib.rs")));
+        assert_eq!(rename_target(old, "main.rs", kind), Err(Problem::Unchanged));
+        assert_eq!(rename_target(old, "MAIN.rs", kind), Ok(PathBuf::from("src/MAIN.rs")));
+        assert_eq!(rename_target(Path::new("README.md"), "src", kind), Err(Problem::Exists(PathBuf::from("src"))));
+        assert_eq!(rename_target(Path::new("src"), "src/a", kind), Err(Problem::Inside));
     }
 }
