@@ -79,6 +79,8 @@ pub fn editor_key(name: &str) -> Option<&'static [u8]> {
         "cut" => b"\x18",
         "copy" => b"\x03",
         "paste" => b"\x16",
+        // Ctrl-E (línea de comandos de Micro) y vkterm.reveal, del plugin Lua.
+        "reveal" => b"\x05vkterm.reveal\r",
         _ => return None,
     })
 }

@@ -198,6 +198,15 @@ function postinit()
 end
 
 function init()
+    -- «Mostrar en Finder» del menú contextual: el archivo de esta pestaña.
+    config.MakeCommand("vkterm.reveal", function(bp)
+        local path = bp.Buf.AbsPath
+        if bp.Buf.Path == "" or path == "" then
+            micro.InfoBar():Error("Este archivo aún no está guardado")
+            return
+        end
+        shell.JobSpawn("open", { "-R", path }, nil, nil, function() end)
+    end, config.NoComplete)
     config.MakeCommand("vkterm.saveall", function()
         each_buffer(function(_, buf)
             if buf.Path ~= "" and buf:Modified() then buf:Save() end

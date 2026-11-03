@@ -26,6 +26,8 @@ pub const EDITOR: &[Entry] = &[
     Entry::Separator,
     item("Seleccionar todo", "⌘A", "select_all"),
     Entry::Separator,
+    item("Mostrar en Finder", "", "reveal"),
+    Entry::Separator,
     item("Paleta de comandos…", "⌘⇧P", "command_palette"),
 ];
 
@@ -34,6 +36,7 @@ pub const EDITOR: &[Entry] = &[
 pub const EXPLORER: &[Entry] = &[
     item("Nuevo archivo…", "⌘N", "new_file"),
     item("Renombrar…", "⌘R", "rename_file"),
+    item("Mostrar en Finder", "", "reveal_file"),
     Entry::Separator,
     item("Mostrar u ocultar .git, .DS_Store…", "Ctrl h", "toggle_excluded"),
     Entry::Separator,
@@ -169,7 +172,7 @@ mod tests {
     fn tamano_con_marco_margen_y_atajos() {
         let menu = Menu::default();
         // "Paleta de comandos…" (19) + 4 + "⌘⇧P" (3), más margen y marco.
-        assert_eq!(menu.size(), (2 + 2 + 19 + 4 + 3, 2 + 7));
+        assert_eq!(menu.size(), (2 + 2 + 19 + 4 + 3, 2 + 9));
         assert_eq!(menu.keys_width(), 3);
     }
 
@@ -181,9 +184,12 @@ mod tests {
         menu.up();
         assert_eq!(menu.action(), Some("command_palette"));
         menu.up();
+        assert_eq!(menu.action(), Some("reveal"));
+        menu.up();
         assert_eq!(menu.action(), Some("select_all"));
         menu.up();
         assert_eq!(menu.action(), Some("paste"));
+        menu.down();
         menu.down();
         menu.down();
         assert_eq!(menu.action(), Some("command_palette"));

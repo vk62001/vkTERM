@@ -542,6 +542,8 @@ impl State {
             }
             // ⌘N: pide el nombre (src/prompt.rs) y lo crea.
             "new_file" => self.new_file(),
+            // Clic derecho en el explorador: la entrada en Finder.
+            "reveal_file" => self.reveal_file(),
             "create_file" => self.create_file(Path::new(payload.trim())),
             // ⌘R: pide el nombre nuevo (src/prompt.rs) y renombra.
             "rename_file" => self.rename_file(),
@@ -1035,7 +1037,7 @@ impl State {
     fn menu_action(&mut self, payload: &str) {
         let Some((pane, action)) = payload.split_once(' ') else { return };
         if pane == "explorer" {
-            if matches!(action, "new_file" | "rename_file" | "toggle_excluded") {
+            if matches!(action, "new_file" | "rename_file" | "toggle_excluded" | "reveal_file") {
                 self.dispatch(action, "");
             } else if action == "command_palette" {
                 self.open_window("palette_commands");
@@ -1059,6 +1061,16 @@ impl State {
         let row = self.tree.selected_path().and(self.tree.selected());
         let folder = newfile::folder(row.as_ref().map(|r| (r.path.as_path(), r.is_dir)));
         launch_window("new_file", "newfile", Some(folder.to_string_lossy().into_owned()));
+    }
+
+    /// «Mostrar en Finder» la entrada seleccionada del explorador (`open -R`).
+    fn reveal_file(&mut self) {
+        let Some(path) = self.tree.selected_path() else {
+            self.status = Some("Selecciona en el explorador lo que quieras mostrar".to_string());
+            return;
+        };
+        let path = if path.is_absolute() { path } else { self.project.join(path) };
+        run_command(&["open", "-R", &path.to_string_lossy()], context("reveal"));
     }
 
     /// ⌘R «Renombrar…» el archivo o carpeta seleccionado del explorador.

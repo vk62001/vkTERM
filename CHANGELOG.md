@@ -7,6 +7,15 @@ Los cambios de cada versión de vkTERM. El formato sigue
 
 ## Sin publicar
 
+## 0.4.2 — 2026-11-03
+
+### Añadido
+
+- **«Mostrar en Finder»** en el menú del clic derecho, como «Reveal in Finder»
+  de VS Code (`open -R`): en el editor, el archivo de la pestaña (si aún no
+  está guardado, lo avisa); en el explorador, la entrada seleccionada. Sin
+  atajo de teclado.
+
 ## 0.4.1 — 2026-11-03
 
 ### Corregido
