@@ -15,7 +15,7 @@ explorador de archivos,<br>editor con pestañas, Shell y agentes de IA
   <a href="https://github.com/vk62001/vkTERM/actions/workflows/ci.yml"><img src="https://github.com/vk62001/vkTERM/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-GPL--3.0--or--later-blue" alt="GPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/plataforma-macOS-lightgrey" alt="macOS">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/versi%C3%B3n-0.5.0-informational" alt="versión 0.5.0"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/versi%C3%B3n-0.6.0-informational" alt="versión 0.6.0"></a>
 </p>
 
 - **vkTERM.app** es tu terminal de todos los días (una copia local de Ghostty
@@ -258,7 +258,8 @@ Claude Code y Codex, como en el IDE. En el **modo IDE**:
 | ⌘G · ⌘⇧G | Siguiente · anterior coincidencia de la búsqueda |
 | ⌘L · ⌘⇧K | Seleccionar la línea · borrar la línea |
 | ⌥↑ · ⌥↓ · ⌥⇧↑ · ⌥⇧↓ | Mover · duplicar la línea |
-| ⌘⇧F | Buscar y reemplazar en todo el proyecto (ripgrep; Tab añade «Reemplazar») |
+| ⌘⇧F | Buscar en los archivos: la vista Buscar de la barra lateral (ripgrep; Tab añade «Reemplazar») |
+| ⌥⌘F | Reemplazar en el archivo del editor |
 | F12 · ⇧F12 | Ir a la definición · buscar referencias (LSP) |
 | ⌘I · ⌘K ⌘I | Sugerencias · información del símbolo (LSP) |
 | ⌘K ⌘R · ⌘K ⌘F · ⌘⇧O | Cambiar el nombre del símbolo · dar formato · símbolos del archivo (LSP) |

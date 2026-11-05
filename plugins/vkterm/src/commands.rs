@@ -39,6 +39,7 @@ pub const COMMANDS: &[Command] = &[
     cmd("Ver: Mostrar u ocultar .git, .DS_Store… en el explorador", "Ctrl h", "toggle_excluded", ""),
     cmd("Ver: Menú del clic derecho del explorador", "⌘.", "explorer_menu", ""),
     cmd("Ver: Explorador", "⌘⇧E", "show_view", "explorer"),
+    cmd("Ver: Buscar en los archivos", "⌘⇧F", "show_view", "search"),
     cmd("Ver: Control de código fuente", "⌃⇧G", "show_view", "scm"),
     cmd("Git: Commit", "⌘Enter", "git", "commit"),
     cmd("Git: Preparar todos los cambios", "", "git", "stage_all"),
@@ -86,6 +87,7 @@ pub const COMMANDS: &[Command] = &[
     cmd("Lenguaje: Iniciar el servidor", "", "editor_key", "lsp_start"),
     cmd("Lenguaje: Detener los servidores", "", "editor_key", "lsp_stop"),
     cmd("Lenguaje: Ver el registro", "", "editor_key", "lsp_log"),
+    cmd("Editor: Reemplazar en el archivo", "⌥⌘F", "editor_key", "replace"),
     cmd("Ver: Aumentar el tamaño de letra", "⌘+", "font_size", "+1"),
     cmd("Ver: Reducir el tamaño de letra", "⌘-", "font_size", "-1"),
     cmd("Ver: Restablecer el tamaño de letra", "⌘0", "font_size", "0"),
@@ -136,6 +138,7 @@ pub fn edit_key(name: &str) -> Option<&'static [u8]> {
         "autosave_off" => b"\x05set autosave 0\r",
         "lsp_start" => b"\x05lsp start\r",
         "lsp_stop" => b"\x05lsp stop\r",
+        "replace" => b"\x05vkterm.replace\r",
         _ => return None,
     })
 }

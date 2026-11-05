@@ -1,0 +1,74 @@
+#!/bin/zsh
+# vkTERM — buscar (y reemplazar) texto en los archivos de la carpeta, para la
+# vista «Buscar» (⌘⇧F) del plugin vkterm.
+#
+#   vkterm-search [-c] [-r] [-w] [--replace TEXTO] -- BÚSQUEDA
+#
+#   -c   distingue mayúsculas (por defecto no)
+#   -r   BÚSQUEDA es una expresión regular (por defecto, texto literal)
+#   -w   solo palabras completas
+#
+# Sin --replace, imprime una línea «ruta:línea:columna:texto» por coincidencia
+# (como `rg --column`), con un máximo de 2000. Usa ripgrep, que respeta
+# .gitignore, y si no está instalado, grep. Con --replace, reescribe los
+# archivos con coincidencias (en una regex, $1… son los grupos) e imprime
+# cuántos cambió. Ignora .git y los archivos binarios.
+emulate -L zsh
+setopt no_unset pipe_fail
+exec </dev/null   # el plugin lo lanza sin entrada estándar válida; rg se quejaría
+
+case_sensitive=0 regex=0 word=0 replace= do_replace=0
+while (( $# )); do
+  case $1 in
+    -c) case_sensitive=1 ;;
+    -r) regex=1 ;;
+    -w) word=1 ;;
+    --replace) replace=${2?falta el texto}; do_replace=1; shift ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+  shift
+done
+query=${1?falta la búsqueda}
+[[ -n $query ]] || exit 0
+
+if (( $+commands[rg] )); then
+  args=(--hidden -g '!.git' --no-heading --color never --max-columns 400 --max-columns-preview --sort path)
+  (( case_sensitive )) && args+=(-s) || args+=(-i)
+  (( regex )) || args+=(-F)
+  (( word )) && args+=(-w)
+  if (( do_replace )); then
+    files=("${(@f)$(rg -l $args -- $query . 2>/dev/null)}")
+    files=(${files:#})
+    (( $#files )) || { print 0; exit 0; }
+    # perl hace el cambio: Q, R y las opciones van por el entorno, sin que
+    # las comillas ni los $ del texto cuenten como código.
+    Q=$query R=$replace RX=$regex CS=$case_sensitive WD=$word perl -CSD -0777 -i -pe '
+      BEGIN {
+        utf8::decode($ENV{Q}); utf8::decode($ENV{R});
+        my $q = $ENV{RX} ? $ENV{Q} : quotemeta($ENV{Q});
+        $q = "\\b(?:$q)\\b" if $ENV{WD};
+        $re = $ENV{CS} ? qr/$q/ : qr/$q/i;
+        $rx = $ENV{RX};
+      }
+      s{$re}{
+        my $r = $ENV{R};
+        if ($rx) { my @c = @{^CAPTURE}; $r =~ s/\$(\d)/defined $c[$1-1] ? $c[$1-1] : ""/ge; }
+        $r
+      }ge;
+    ' -- $files
+    print $#files
+  else
+    rg --line-number --column $args -- $query . 2>/dev/null | sed 's#^\./##' | head -2000
+  fi
+else
+  flags=(-rIn --exclude-dir=.git --exclude-dir=node_modules)
+  (( case_sensitive )) || flags+=(-i)
+  (( regex )) && flags+=(-E) || flags+=(-F)
+  (( word )) && flags+=(-w)
+  if (( do_replace )); then
+    print -u2 "vkterm-search: reemplazar en archivos necesita ripgrep (brew install ripgrep)."
+    exit 1
+  fi
+  command grep $flags -- $query . 2>/dev/null | sed 's#^\./##' | awk -F: '{ print $1 ":" $2 ":1:" substr($0, length($1 $2) + 3) }' | head -2000
+fi

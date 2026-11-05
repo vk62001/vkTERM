@@ -2,7 +2,7 @@
 
 ## 0g. Estudio: rehacer vkTERM en Rust, 05-11-2026 (sin decidir)
 
-Tras los arreglos de 0.5.0 se estudió si conviene rehacer vkTERM en Rust. La
+Tras los arreglos de 0.6.0 se estudió si conviene rehacer vkTERM en Rust. La
 recomendación es ir por partes: primero un multiplexor propio que sustituya a
 Zellij dentro de Ghostty, y decidir después si se hace una app nativa. Todo el
 detalle, con cómo retomarlo, está en
@@ -11,7 +11,8 @@ detalle, con cómo retomarlo, está en
 ## 0f. Edición, búsqueda en el proyecto y LSP, 03-11-2026 (sin publicar, rama `main`)
 
 Hecho: multicursor, comentar, indentar, mover / duplicar / borrar línea,
-siguiente / anterior coincidencia, ⌘⇧F (buscar y reemplazar con ripgrep),
+siguiente / anterior coincidencia, ⌘⇧F (al fusionar con 0.5.0 quedó la vista
+Buscar de la barra lateral),
 cableado del LSP de H1 (F12, ⇧F12, ⌘I, ⌘K ⌘I, ⌘K ⌘R, ⌘K ⌘F, ⌘⇧O),
 historial y blame del archivo, dividir el editor, autoguardado y «Git:
 Iniciar repositorio» desde la paleta. `smoke-test.py` cubre la edición y ⌘⇧F;

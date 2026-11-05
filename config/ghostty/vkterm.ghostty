@@ -170,8 +170,11 @@ keybind = vkterm/super+k>super+f=esc:~
 keybind = vkterm/super+k>super+r=esc:@
 keybind = vkterm/super+shift+o=esc:}
 
-# ⌘⇧F: buscar (y reemplazar) en todo el proyecto.
+# ⌘⇧F: buscar en los archivos (la vista Buscar de la barra lateral, con el
+# campo de reemplazo con Tab) y ⌥⌘F: reemplazar en el archivo del editor, como
+# VS Code. Con el foco fuera del editor, ⌥⌘F no hace nada.
 keybind = vkterm/super+shift+f=esc:{
+keybind = vkterm/super+alt+f=esc:"
 
 # ⌘S: guardar en Micro.
 keybind = vkterm/super+s=esc:OQ

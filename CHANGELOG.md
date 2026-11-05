@@ -7,7 +7,7 @@ Los cambios de cada versión de vkTERM. El formato sigue
 
 ## Sin publicar
 
-## 0.5.0 — 2026-11-05
+## 0.6.0 — 2026-11-05
 
 ### Añadido
 
@@ -20,8 +20,6 @@ Los cambios de cada versión de vkTERM. El formato sigue
   sangría (⌘] ⌘[), siguiente / anterior coincidencia (⌘G ⌘⇧G), seleccionar y
   borrar la línea (⌘L ⌘⇧K), principio / fin del archivo (⌘↑ ⌘↓), mover y
   duplicar la línea (⌥↑ ⌥↓ ⌥⇧↑ ⌥⇧↓). ⌘D deja de ser «nada» en el IDE.
-- **Buscar y reemplazar en todo el proyecto (⌘⇧F)** con ripgrep: Enter abre el
-  resultado en su línea; Tab añade «Reemplazar», con confirmación.
 - **Lenguaje (LSP, H1):** F12 definición, ⇧F12 referencias, ⌘I sugerencias,
   ⌘K ⌘I información, ⌘K ⌘R cambiar el nombre, ⌘K ⌘F formato, ⌘⇧O símbolos, y
   los comandos «Lenguaje: …» de la paleta. Necesita `bin/vkterm-plugins install`.
@@ -93,6 +91,35 @@ Los cambios de cada versión de vkTERM. El formato sigue
 Plegado de código, minimapa, migas de pan, panel de Problemas global,
 depurador, tareas y snippets: Micro no los tiene y no se pueden añadir sin
 tocar Micro. Los símbolos del archivo (⌘⇧O) sustituyen al esquema.
+
+## 0.5.0 — 2026-11-03
+
+Buscar y reemplazar, como en VS Code.
+
+### Añadido
+
+- **Buscar en los archivos (⌘⇧F)**: una vista más de la barra lateral, junto
+  al explorador y Control de código fuente (⌘⇧E vuelve al explorador).
+  - Escribir busca en toda la carpeta (con ripgrep, que respeta `.gitignore`
+    y mira también los archivos ocultos como `.env`). Los resultados salen
+    agrupados por archivo, plegables, con la coincidencia resaltada.
+  - Ctrl t, Ctrl w y Ctrl r: distinguir mayúsculas, palabras completas y
+    expresión regular; las activas se marcan arriba a la derecha.
+  - Enter (o un clic) en una coincidencia abre el archivo en esa línea y
+    columna; en un archivo, pliega o despliega sus coincidencias.
+  - **Reemplazar en los archivos:** Tab muestra el campo de reemplazo y Enter
+    en él reescribe todos los archivos con coincidencias, tras confirmar
+    (con regex valen `$1`…). Pide ripgrep (`brew install ripgrep`); sin él,
+    solo busca, con grep. Los archivos abiertos en el editor con cambios sin
+    guardar hay que recargarlos.
+  - `bin/vkterm-search` (también en «Ver: Buscar en los archivos» de ⌘⇧P) y
+    `vkterm-open` entiende `VKTERM_LINE` y `VKTERM_COLUMN`.
+- **Reemplazar en el archivo (⌥⌘F)**, el Ctrl+H de VS Code: pide qué buscar
+  (la selección, si la hay) y con qué, y si reemplazar todas a la vez o una a
+  una (y: esta, n: saltar, Esc: parar). Es texto literal y no distingue
+  mayúsculas. También en ⌘⇧P: «Editor: Reemplazar en el archivo». (⌘F ya
+  buscaba en el archivo.)
+- `scripts/doctor.sh` comprueba ripgrep.
 
 ## 0.4.2 — 2026-11-03
 

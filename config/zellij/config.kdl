@@ -299,6 +299,10 @@ keybinds clear-defaults=true {
         // explorador. ⌘Enter: commit en Control de código fuente.
         bind "Alt /" { MessagePlugin "vkterm" { name "show_view"; payload "scm"; }; }
         bind "Alt '" { MessagePlugin "vkterm" { name "show_view"; payload "explorer"; }; }
+        // ⌘⇧F: la vista Buscar (en los archivos) de la barra lateral.
+        bind "Alt {" { MessagePlugin "vkterm" { name "show_view"; payload "search"; }; }
+        // ⌥⌘F: Reemplazar en el archivo del editor (Ctrl+H en VS Code).
+        bind "Alt \"" { MessagePlugin "vkterm" { name "edit"; payload "replace"; }; }
         bind "Alt *" { MessagePlugin "vkterm" { name "scm_commit"; }; }
         // ⌘⇧,: recargar la configuración de Ghostty sin perder el modo IDE.
         bind "Alt r" { MessagePlugin "vkterm" { name "reload_config"; }; }
@@ -318,14 +322,6 @@ keybinds clear-defaults=true {
             MessagePlugin "vkterm" {
                 name "palette_commands"
                 mode "palette"
-                floating true
-            };
-        }
-        // ⌘⇧F: buscar en todo el proyecto (mode "search").
-        bind "Alt {" {
-            MessagePlugin "vkterm" {
-                name "toggle_search"
-                mode "search"
                 floating true
             };
         }

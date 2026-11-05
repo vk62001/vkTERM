@@ -104,7 +104,7 @@ EXPECTED_KEYBINDS = {"vkterm/" + trigger: action for trigger, action in {
     "super+c": "copy_to_clipboard:mixed|esc:c", "super+v": "paste_from_clipboard|esc:v",
     "super+z": "esc:u", "super+shift+z": "esc:y", "super+a": "esc:a", "super+f": "esc:s",
     "super+x": "esc:x", "super+shift+comma": "esc:r",
-    "super+shift+f": "esc:{", "super+i": "esc:>", "super+k>super+i": "esc:^",
+    "super+shift+f": "esc:{", "super+alt+f": 'esc:\\"', "super+i": "esc:>", "super+k>super+i": "esc:^",
     "shift+f12": "esc:|", "super+k>super+f": "esc:~", "super+k>super+r": "esc:@", "super+shift+o": "esc:}", "super+d": "esc:!", "super+shift+d": "ignore",
     "super+/": "esc:#", "super+shift+7": "esc:#", "super+bracket_right": "esc:$",
     "super+bracket_left": "esc:%", "super+g": "esc:&", "super+shift+g": "esc:(",
@@ -143,12 +143,12 @@ SHORTCUTS = {name: "vkterm/" + trigger for name, trigger in {
              "⌘X": "super+x", "⌘C": "super+c", "⌘V": "super+v",
              "⌘D": "super+d", "⌘/": "super+/", "⌘]": "super+bracket_right", "⌘[": "super+bracket_left",
              "⌘G": "super+g", "⌘⇧G": "super+shift+g", "⌘L": "super+l", "⌘⇧K": "super+shift+k",
-             "⌘⇧F": "super+shift+f",
+             "⌘⇧F": "super+shift+f", "⌥⌘F": "super+alt+f",
              "⌃⇧G": "ctrl+shift+g", "⌘⇧E": "super+shift+e", "⌘Enter": "super+enter",
              "⌘.": "super+period"}.items()}
 CONFIRM_TITLE = "Cerrar carpeta"
 SCM_TITLE = "Control de código fuente"
-SEARCH_TITLE = "Buscar en el proyecto"
+SEARCH_TITLE = "Buscar"
 BRANCHES_TITLE = "Comparar con otra rama"
 RECENT_TITLE = "Abrir reciente"
 SHIFT_ENTER = b"\x1b[13;2u"  # protocolo de teclado de kitty
@@ -397,7 +397,8 @@ def action_bytes(action):
     if "|" in action:
         action = next(a for a in action.split("|") if a.startswith(("esc:", "csi:")))
     if action.startswith("esc:"):
-        return b"\x1b" + action[4:].encode()
+        # +list-keybinds escribe el texto como una cadena de Zig: esc:" sale esc:\".
+        return b"\x1b" + action[4:].replace('\\"', '"').replace("\\\\", "\\").encode()
     if action.startswith("csi:"):
         return b"\x1b[" + action[4:].encode()
     raise ValueError("acción sin bytes: %s" % action)
@@ -755,22 +756,26 @@ def editor_pty(s, client, cmd, project):
     check("⌘L selecciona la línea (escribir la sustituye)", wait_until(lambda: lines()[:1] == ["Z"]), str(lines()[:2]))
     probe = project / "src" / "zeta_probe.txt"
     probe.write_text("uno\nneedle-vk-77 aquí\ntres\n")
+    search_view = lambda: (p := s.pane(SEARCH_TITLE)) and s.plugin_view(pane_id(p)) or ""
     client.send(cmd["⌘⇧F"], pause=1.0)
+    opened = wait_until(lambda: s.focused() == SEARCH_TITLE, timeout=5)
     client.send(b"needle-vk-77", pause=2.0)
-    shown = wait_until(lambda: (p := s.pane(SEARCH_TITLE)) and "zeta_probe.txt:2" in s.plugin_view(pane_id(p)), timeout=8)
-    client.send(ENTER, pause=1.5)
-    check("⌘⇧F busca en el proyecto y Enter abre el resultado en su línea",
-          shown and wait_until(lambda: s.pane(SEARCH_TITLE) is None and micro_status(s).startswith("src/zeta_probe.txt (2,")),
-          micro_status(s)[:50])
+    shown = wait_until(lambda: "zeta_probe.txt" in search_view(), timeout=8)
+    client.send(DOWN, DOWN, ENTER, pause=1.5)  # el archivo y su coincidencia
+    check("⌘⇧F abre la vista Buscar; escribir busca y Enter en la coincidencia abre su línea",
+          opened and shown and wait_until(lambda: micro_status(s).startswith("src/zeta_probe.txt (2,")),
+          micro_status(s)[:50], s)
     client.send(cmd["⌘W"], pause=0.8)  # la pestaña del resultado
-    client.send(cmd["⌘⇧F"], pause=1.0)
-    client.send(b"needle-vk-77", b"\t", b"needle-new", pause=2.0)
-    client.send(ENTER, pause=2.0)
-    asked = wait_until(lambda: (p := s.pane(SEARCH_TITLE)) and "reemplazar en 1 archivo" in s.plugin_view(pane_id(p)), timeout=8)
+    client.send(cmd["⌘⇧F"], pause=1.0)  # vuelve al campo de búsqueda
+    wait_until(lambda: s.focused() == SEARCH_TITLE, timeout=5)
+    client.send(b"\t", b"needle-new", pause=1.5)
+    client.send(ENTER, pause=1.5)
+    asked = wait_until(lambda: (p := s.pane("Reemplazar en los archivos")) and p["is_floating"], timeout=6)
     client.send(ENTER, pause=2.5)
-    check("⌘⇧F: Tab añade «Reemplazar»; Enter pide confirmación y otro Enter reemplaza en el proyecto",
-          asked and wait_until(lambda: "needle-new aquí" in probe.read_text() and s.pane(SEARCH_TITLE) is None),
-          probe.read_text()[:40])
+    check("⌘⇧F: Tab muestra «Reemplazar»; Enter pregunta y, al aceptar, reemplaza en los archivos",
+          asked and wait_until(lambda: "needle-new aquí" in probe.read_text()),
+          probe.read_text()[:40], s)
+    client.send(cmd["⌘⇧E"], pause=0.8)  # el explorador, para lo que sigue
     client.send(ESC, pause=0.5)
     client.send(cmd["⌘P"], b"notes", ENTER, pause=1.2)
     wait_until(lambda: micro_status(s).startswith("src/notes.ts "))

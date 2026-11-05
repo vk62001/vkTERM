@@ -1,7 +1,7 @@
 # Estudio: rehacer vkTERM en Rust
 
 **Fecha:** 5-11-2026 · **Estado:** estudio, sin decidir · **Versión de vkTERM
-en ese momento:** 0.5.0
+en ese momento:** 0.6.0
 
 Este documento guarda lo que se averiguó para poder retomarlo más adelante.
 Lo hizo un agente de investigación (solo lectura del repositorio y búsqueda
@@ -15,7 +15,7 @@ El usuario estaba cansado de errores que reaparecen («vamos a seguir parchando
 y será un monstruo»). Los problemas encontrados ese día estaban todos en las
 costuras entre Ghostty, Zellij, el plugin y Micro:
 
-| Problema | Dónde estaba | Cómo quedó en 0.5.0 |
+| Problema | Dónde estaba | Cómo quedó en 0.6.0 |
 |---|---|---|
 | El clic derecho no llegaba al explorador ni al editor sin el foco | Zellij 0.45.1 no pasa el clic derecho a los plugins | Parche propio (`patches/zellij/0001`), Zellij compilado con `scripts/build-zellij.sh` |
 | ⌃L, `clear`, nano y htop fallaban por ssh desde el Shell del IDE | Los paneles heredaban `TERM=xterm-ghostty` | `env { TERM "xterm-256color" }` en `config/zellij/config.kdl` |
@@ -127,7 +127,7 @@ intermedio, solo macOS en Apple Silicon, «igualar lo de hoy» sin extras.
 
 ## Recomendación: incremental, no de golpe
 
-1. **Ya (0–2 semanas):** congelar versiones (hecho en 0.5.0: Zellij y
+1. **Ya (0–2 semanas):** congelar versiones (hecho en 0.6.0: Zellij y
    Ghostty parcheados, compilaciones fuera de las cachés) y cerrar las pruebas
    manuales pendientes. Sin cambios de arquitectura.
 2. **Fase 1 (2–3 meses): sustituir Zellij por un multiplexor propio en Rust**
@@ -173,7 +173,7 @@ Primeros pasos propuestos para la fase 1, en orden:
 ## Fuentes
 
 Locales: README.md, docs/architecture.md, docs/keybindings.md,
-docs/next-steps.md, CHANGELOG.md (0.5.0), plugins/vkterm/Cargo.toml,
+docs/next-steps.md, CHANGELOG.md (0.6.0), plugins/vkterm/Cargo.toml,
 patches/, THIRD_PARTY_NOTICES.md. Web (5-11-2026): crates.io
 (`alacritty_terminal`, `termwiz`, `vt100`, `gpui`, `egui`, `iced`, `winit`,
 `accesskit_macos`, `async-lsp`, `ropey`, `tree-sitter`, `helix-core`);
