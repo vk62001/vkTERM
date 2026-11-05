@@ -7,6 +7,93 @@ Los cambios de cada versión de vkTERM. El formato sigue
 
 ## Sin publicar
 
+## 0.5.0 — 2026-11-05
+
+### Añadido
+
+- **Copiar todo el historial del panel (⌘K ⌘C):** vuelca al portapapeles el
+  historial completo de Claude Code, Codex o el Shell, para copiar prompts y
+  respuestas largos sin seleccionar con el ratón (al girar la rueda la
+  selección se perdía). También está en la paleta («Ver: Copiar todo el
+  historial del panel»). `Alt +` deja de ser «agrandar panel»; queda `Alt =`.
+- **Edición como VS Code:** multicursor (⌘D), comentar (⌘/), indentar y quitar
+  sangría (⌘] ⌘[), siguiente / anterior coincidencia (⌘G ⌘⇧G), seleccionar y
+  borrar la línea (⌘L ⌘⇧K), principio / fin del archivo (⌘↑ ⌘↓), mover y
+  duplicar la línea (⌥↑ ⌥↓ ⌥⇧↑ ⌥⇧↓). ⌘D deja de ser «nada» en el IDE.
+- **Buscar y reemplazar en todo el proyecto (⌘⇧F)** con ripgrep: Enter abre el
+  resultado en su línea; Tab añade «Reemplazar», con confirmación.
+- **Lenguaje (LSP, H1):** F12 definición, ⇧F12 referencias, ⌘I sugerencias,
+  ⌘K ⌘I información, ⌘K ⌘R cambiar el nombre, ⌘K ⌘F formato, ⌘⇧O símbolos, y
+  los comandos «Lenguaje: …» de la paleta. Necesita `bin/vkterm-plugins install`.
+- **Comandos nuevos de la paleta (⌘⇧P):** «Git: Historial del archivo»,
+  «Git: Blame del archivo» (ventana flotante con el paginador de git),
+  «Git: Iniciar repositorio», «Editor: Dividir a la derecha / abajo», «Editor:
+  Ir a la línea…» y «Archivo: Activar / Desactivar el autoguardado».
+
+### Corregido
+
+- **ssh desde el Shell del IDE: ⌃L, `clear`, nano y htop no funcionaban en el
+  servidor.** El arreglo de abajo solo valía en el modo terminal: los paneles
+  del IDE heredaban `TERM=xterm-ghostty` y sus shells no cargan la integración
+  de Ghostty que envuelve `ssh`. Ahora los paneles ven `TERM=xterm-256color`
+  (lo que emula Zellij; bloque `env` de config/zellij/config.kdl).
+- **Los atajos ⌘ del IDE (también ⌘C en el editor) dejaban de funcionar** tras
+  cualquier recarga de la configuración de Ghostty que no hacía vkTERM:
+  «Reload Configuration» del menú o macOS al pasar de claro a oscuro. Ghostty
+  apaga entonces el modo IDE de todas las pestañas y nada lo volvía a
+  encender. Ahora cada pestaña del IDE tiene un vigilante
+  (`vkterm-surface keep`) que lo enciende de nuevo en 2 segundos.
+- **Edición › Copiar no mostraba ⌘C** (Ghostty 1.3.1 lo trae `performable` y
+  esos atajos no van al menú). Ahora lo muestra; sin selección, ⌘C no hace
+  nada, como en Terminal. Pegar sigue sin mostrar ⌘V: tiene que ser
+  `performable` para adjuntar imágenes a Claude Code y Codex.
+- **El clic derecho en el explorador, y en el editor con el foco en otro
+  panel, no hacía nada.** Zellij 0.45.1 solo pasa el clic derecho al panel que
+  ya tiene el foco y nunca a un plugin. `scripts/build-zellij.sh` compila
+  Zellij con un parche pequeño (patches/zellij) y `bin/vkterm-workspace` lo
+  usa si existe; sin compilarlo, sigue como antes (⌘. y ⇧F10).
+- **Seleccionar con el ratón en un panel sin el foco no copiaba nada** (y ⌘C
+  después tampoco): el primer arrastre solo enfocaba el panel. Ahora el mismo
+  clic enfoca y llega al panel, como en VS Code: en el Shell selecciona y
+  copia al soltar, en el editor pone el cursor y en el explorador elige el
+  archivo (`mouse_click_through` en config/zellij/config.kdl).
+- **nano, htop y compañía fallaban por ssh** con «Error opening terminal:
+  xterm-ghostty»: los servidores no tienen ese terminfo. Ahora `ssh` desde una
+  pestaña lo instala en el servidor la primera vez (`~/.terminfo`) y, si no
+  puede, entra con `TERM=xterm-256color`.
+- **⌘K ⌘S, el clic derecho, la paleta y las demás ventanas dejaban de
+  abrirse** si algo vaciaba `~/Library/Caches` (un limpiador, o macOS cuando
+  falta espacio) con una carpeta abierta: Zellij olvidaba los permisos del
+  plugin y cada ventana nueva se quedaba escondida pidiendo `Allow? (y/n)`.
+  Ahora `bin/vkterm-permissions` los vuelve a escribir al abrir una carpeta y,
+  con la carpeta abierta, cada 10 segundos; si aun así una ventana se queda
+  pidiéndolos, el explorador le contesta «y» y se abre sola, con un aviso.
+  `scripts/doctor.sh` revisa las sesiones abiertas (permisos, ventanas
+  atascadas, plugin recompilado después de abrirlas).
+- **Las pruebas automáticas dejaban sin atajos ⌘ las pestañas del IDE** del
+  vkTERM.app desde el que se ejecutaban: al cambiar de tema, `vkterm-theme`
+  subía por los procesos padre del pseudoterminal de la prueba hasta ese
+  Ghostty y lo recargaba (Ghostty vacía las tablas de atajos al recargar).
+  Ahora solo recarga el Ghostty que dibuja el terminal de la sesión, y la
+  prueba usa un identificador de app que no existe para AppleScript.
+- **El clic derecho en el explorador no abría su menú** (desde 0.4.0): Zellij
+  0.45.1 no les pasa el clic derecho a los plugins (su rama principal ya lo
+  hace). Ahora el menú se abre con **⌘.**, desde cualquier panel (muestra el
+  explorador si estaba oculto), o con **⇧F10** en el explorador, como en VS
+  Code, para lo seleccionado y debajo de ello. También desde la paleta («Ver:
+  Menú del clic derecho del explorador»). El clic derecho funcionará cuando
+  Zellij publique su arreglo; el del editor sí funciona.
+- **El explorador no mostraba los archivos creados desde fuera** (por Claude
+  Code, Codex o el Shell): dependía solo de los avisos de Zellij, que no
+  siempre llegan. Ahora relee además cada segundo las carpetas abiertas y solo
+  redibuja si algo cambió.
+
+### No hecho (a propósito)
+
+Plegado de código, minimapa, migas de pan, panel de Problemas global,
+depurador, tareas y snippets: Micro no los tiene y no se pueden añadir sin
+tocar Micro. Los símbolos del archivo (⌘⇧O) sustituyen al esquema.
+
 ## 0.4.2 — 2026-11-03
 
 ### Añadido

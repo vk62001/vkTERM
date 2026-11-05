@@ -44,7 +44,17 @@ pub const CATEGORIES: &[Category] = &[
             ("⌘X  ⌘C  ⌘V", "Cortar / copiar / pegar (sin selección, la línea)"),
             ("⌘A", "Seleccionar todo"),
             ("⌘F", "Buscar en el archivo"),
+            ("⌘⇧F", "Buscar y reemplazar en todo el proyecto"),
             ("⌘←  ⌘→", "Inicio / fin de línea"),
+            ("⌘↑  ⌘↓", "Principio / fin del archivo"),
+            ("⌘D", "Añadir un cursor en la siguiente coincidencia"),
+            ("⌘/", "Comentar o descomentar la línea"),
+            ("⌘]  ⌘[", "Indentar / quitar sangría"),
+            ("⌘G  ⌘⇧G", "Siguiente / anterior coincidencia"),
+            ("⌘L", "Seleccionar la línea"),
+            ("⌘⇧K", "Borrar la línea"),
+            ("⌥↑  ⌥↓", "Mover la línea arriba / abajo"),
+            ("⌥⇧↑  ⌥⇧↓", "Duplicar la línea arriba / abajo"),
         ],
     },
     Category {
@@ -54,6 +64,7 @@ pub const CATEGORIES: &[Category] = &[
             ("→  ←", "Desplegar / plegar la carpeta"),
             ("Enter", "Abrir en una pestaña"),
             ("Espacio", "Abrir sin salir del explorador"),
+            ("⌘.  ⇧F10", "Menú del clic derecho de lo seleccionado"),
             ("a … z", "Saltar a la siguiente entrada con esa letra"),
             ("Ctrl h", "Mostrar u ocultar .git, .DS_Store…"),
         ],
@@ -66,6 +77,9 @@ pub const CATEGORIES: &[Category] = &[
             ("⌘C", "Copiar sin interrumpir el proceso"),
             ("⌘V", "Pegar; en Claude Code y Codex, también una imagen"),
             ("Ctrl c", "Interrumpir el proceso"),
+            // Solo sirve en estos paneles. En Paneles alargaba la primera
+            // columna, que en una ventana de 50 filas ya no cabe entera.
+            ("⌘K  ⌘C", "Copiar todo el historial del panel con el foco"),
         ],
     },
     Category {
@@ -102,6 +116,18 @@ pub const CATEGORIES: &[Category] = &[
             ("Espacio", "Preparar / quitar el archivo"),
             ("Enter", "Diferencias del archivo (q cierra)"),
             ("→  ⌫", "Abrir el archivo / descartar sus cambios"),
+        ],
+    },
+    Category {
+        name: "Lenguaje",
+        entries: &[
+            ("F12", "Ir a la definición"),
+            ("⇧F12", "Buscar todas las referencias"),
+            ("⌘I", "Sugerencias (Tab y ⇧Tab las recorren)"),
+            ("⌘K  ⌘I", "Mostrar información del símbolo"),
+            ("⌘K  ⌘R", "Cambiar el nombre del símbolo"),
+            ("⌘K  ⌘F", "Dar formato al documento"),
+            ("⌘⇧O", "Símbolos del archivo"),
         ],
     },
 ];

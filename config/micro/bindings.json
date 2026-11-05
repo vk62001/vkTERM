@@ -2,5 +2,14 @@
     "Ctrl-g": "None",
     "Ctrl-u": "None",
     "F1": "ToggleHelp",
-    "MouseRight": "lua:vkterm.contextmenu"
+    "MouseRight": "lua:vkterm.contextmenu",
+    "Alt-$": "lua:vkterm.indent",
+    "Alt-%": "OutdentSelection|OutdentLine",
+    "Alt-&": "FindNext",
+    "Alt-(": "FindPrevious",
+    "Alt-)": "SelectLine",
+    "Alt-<": "DeleteLine",
+    "AltShiftDown": "DuplicateLine",
+    "AltShiftUp": "DuplicateLine&MoveLinesUp",
+    "F12": "command:lsp goto-definition"
 }

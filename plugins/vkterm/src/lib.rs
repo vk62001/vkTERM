@@ -7,6 +7,7 @@ pub mod commands;
 pub mod folders;
 pub mod fuzzy;
 pub mod git;
+pub mod grep;
 pub mod layout;
 pub mod memory;
 pub mod menu;

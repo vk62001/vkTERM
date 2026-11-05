@@ -1,0 +1,41 @@
+diff --git a/zellij-server/src/lib.rs b/zellij-server/src/lib.rs
+index c86de12..d5c320c 100644
+--- a/zellij-server/src/lib.rs
++++ b/zellij-server/src/lib.rs
+@@ -1455,22 +1455,20 @@ pub fn start_server_impl(
+                     }
+                     // Handle regular client removal
+                     remove_client!(client_id, os_input, session_state, session_data);
+-                    session_data
+-                        .write()
+-                        .unwrap()
+-                        .as_ref()
+-                        .unwrap()
+-                        .senders
+-                        .send_to_screen(ScreenInstruction::RemoveClient(client_id))
+-                        .unwrap();
+-                    session_data
+-                        .write()
+-                        .unwrap()
+-                        .as_ref()
+-                        .unwrap()
+-                        .senders
+-                        .send_to_plugin(PluginInstruction::RemoveClient(client_id))
+-                        .unwrap();
++                    // vkTERM: a client can leave before the session exists: `zellij
++                    // list-sessions` checks each socket (ConnStatus) and may
++                    // reach a server that is still waiting for its first
++                    // client. There is no screen or plugin thread to tell yet.
++                    if let Some(session_data) = session_data.read().unwrap().as_ref() {
++                        session_data
++                            .senders
++                            .send_to_screen(ScreenInstruction::RemoveClient(client_id))
++                            .unwrap();
++                        session_data
++                            .senders
++                            .send_to_plugin(PluginInstruction::RemoveClient(client_id))
++                            .unwrap();
++                    }
+                 }
+             },
+             ServerInstruction::SendWebClientsForbidden(client_id) => {

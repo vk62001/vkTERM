@@ -28,6 +28,7 @@ sesiones de Zellij que ya existían. Si Zellij pide permisos para el plugin
 vkterm (solo la primera vez), la prueba los concede. Solo usa la biblioteca
 estándar de Python 3 (incluido en las Xcode Command Line Tools).
 """
+import base64
 import fcntl
 import json
 import os
@@ -91,7 +92,7 @@ EXPECTED_KEYBINDS = {"vkterm/" + trigger: action for trigger, action in {
     "super+b": "esc:6", "super+j": "esc:7", "super+alt+b": "esc:8", "super+alt+key_b": "esc:8",
     "super+w": "esc:9", "super+p": "esc:0", "super+shift+p": "esc:;", "super+k>super+s": "esc:?",
     "super+n": "esc:d",
-    "super+k>z": "esc:z",
+    "super+k>z": "esc:z", "super+k>super+c": "esc:+",
     "super+k>super+t": "esc:t",
     "super+k>super+l": "esc:g",
     "super++": "esc:m", "super+=": "esc:m", "super+-": "esc:w", "super+0": "esc:e",
@@ -103,8 +104,14 @@ EXPECTED_KEYBINDS = {"vkterm/" + trigger: action for trigger, action in {
     "super+c": "copy_to_clipboard:mixed|esc:c", "super+v": "paste_from_clipboard|esc:v",
     "super+z": "esc:u", "super+shift+z": "esc:y", "super+a": "esc:a", "super+f": "esc:s",
     "super+x": "esc:x", "super+shift+comma": "esc:r",
-    "super+d": "ignore", "super+shift+d": "ignore",
+    "super+shift+f": "esc:{", "super+i": "esc:>", "super+k>super+i": "esc:^",
+    "shift+f12": "esc:|", "super+k>super+f": "esc:~", "super+k>super+r": "esc:@", "super+shift+o": "esc:}", "super+d": "esc:!", "super+shift+d": "ignore",
+    "super+/": "esc:#", "super+shift+7": "esc:#", "super+bracket_right": "esc:$",
+    "super+bracket_left": "esc:%", "super+g": "esc:&", "super+shift+g": "esc:(",
+    "super+l": "esc:)", "super+shift+k": "esc:<",
+    "super+arrow_up": "csi:1;5H", "super+arrow_down": "csi:1;5F",
     "ctrl+shift+g": "esc:/", "super+shift+e": "esc:'", "super+enter": "esc:*",
+    "super+period": "esc::",
 }.items()}
 # Modo terminal: ⌘B ⌘J ⌘P ⌘⇧P convierten la pestaña (F13–F16 con Super, que
 # recoge config/zsh/vkterm.zsh), ⌘+ ⌘- ⌘0 cambian el tamaño de letra
@@ -129,14 +136,19 @@ SHORTCUTS = {name: "vkterm/" + trigger for name, trigger in {
              "⌃Tab": "ctrl+tab", "⌃⇧Tab": "ctrl+shift+tab",
              "⌘⌥↑": "super+alt+arrow_up", "⌘⌥↓": "super+alt+arrow_down",
              "⌘←": "super+arrow_left", "⌘→": "super+arrow_right",
-             "⌘K ⌘S": "super+k>super+s", "⌘K Z": "super+k>z", "⌘K ⌘T": "super+k>super+t",
+             "⌘K ⌘S": "super+k>super+s", "⌘K Z": "super+k>z", "⌘K ⌘C": "super+k>super+c", "⌘K ⌘T": "super+k>super+t",
              "⌘K ⌘L": "super+k>super+l", "⌘+": "super++", "⌘-": "super+-", "⌘0": "super+0",
              "⌘K F": "super+k>f", "⌘O": "super+o", "⌘⇧,": "super+shift+comma",
              "⌘Z": "super+z", "⌘⇧Z": "super+shift+z", "⌘A": "super+a", "⌘F": "super+f",
              "⌘X": "super+x", "⌘C": "super+c", "⌘V": "super+v",
-             "⌃⇧G": "ctrl+shift+g", "⌘⇧E": "super+shift+e", "⌘Enter": "super+enter"}.items()}
+             "⌘D": "super+d", "⌘/": "super+/", "⌘]": "super+bracket_right", "⌘[": "super+bracket_left",
+             "⌘G": "super+g", "⌘⇧G": "super+shift+g", "⌘L": "super+l", "⌘⇧K": "super+shift+k",
+             "⌘⇧F": "super+shift+f",
+             "⌃⇧G": "ctrl+shift+g", "⌘⇧E": "super+shift+e", "⌘Enter": "super+enter",
+             "⌘.": "super+period"}.items()}
 CONFIRM_TITLE = "Cerrar carpeta"
 SCM_TITLE = "Control de código fuente"
+SEARCH_TITLE = "Buscar en el proyecto"
 BRANCHES_TITLE = "Comparar con otra rama"
 RECENT_TITLE = "Abrir reciente"
 SHIFT_ENTER = b"\x1b[13;2u"  # protocolo de teclado de kitty
@@ -168,6 +180,10 @@ class Client:
             # Tema, estado de Micro y memoria propios: no tocan los del usuario.
             os.environ["VKTERM_STATE_DIR"] = str(Path(cwd) / "state")
             os.environ["DISABLE_AUTO_UPDATE"] = OMZ_NO_UPDATE
+            # Una app que no existe: lo que se haga por AppleScript
+            # (bin/vkterm-surface) no llega al vkTERM.app desde el que se
+            # ejecuten las pruebas, con las pestañas del IDE del usuario.
+            os.environ["VKTERM_APP_ID"] = "io.github.vk62001.vkterm.smoke-none"
             os.environ.update(env or {})
             os.execv(argv[0], argv)
         fcntl.ioctl(self.fd, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
@@ -474,6 +490,12 @@ def check_config():
     check("⌘T, ⌘N y ⌘⇧, por tecla física: sin atajo en el menú, la tabla del IDE los recibe",
           "super+t" not in binds and "super+n" not in binds and "super+shift+," not in binds)
     check("⌘C nunca envía Ctrl-C", binds.get("vkterm/super+c", "").startswith("copy_to_clipboard"))
+    # Ghostty 1.3.1 trae ⌘C `performable`, y esos atajos no van al menú.
+    check("⌘C sin performable en el modo terminal: Edición › Copiar muestra ⌘C",
+          re.search(r"^keybind = super\+c=copy_to_clipboard:mixed$", PROFILE.read_text(), re.M)
+          and binds.get("super+c") == "copy_to_clipboard:mixed")
+    check("los paneles del IDE ven TERM=xterm-256color (ssh a servidores sin el terminfo de Ghostty)",
+          re.search(r'^env \{\s*TERM "xterm-256color"\s*\}', (ROOT / "config" / "zellij" / "config.kdl").read_text(), re.M))
     # +list-keybinds no muestra el prefijo performable:, se mira en el perfil.
     check("⌘V en el modo terminal: pega el texto y, si no hay, deja pasar la tecla (bin/vkterm-agent)",
           re.search(r"^keybind = performable:super\+v=paste_from_clipboard$", PROFILE.read_text(), re.M)
@@ -562,6 +584,8 @@ def scenario_pty(cmd, tmp):
             versions_pty(s, client)
             keyboard_pty(s, client, cmd)
             editor_pty(s, client, cmd, project)
+            if "--only-editor" in sys.argv[1:]:
+                return
             explorer_pty(s, client, cmd, project)
             newfile_pty(s, client, cmd, project)
             toggles_pty(s, client, cmd)
@@ -571,6 +595,7 @@ def scenario_pty(cmd, tmp):
             fonts_pty(s, client, cmd, tmp)
             brackets_pty(s, client, cmd, project)
             context_menu_pty(s, client, cmd, project)
+            explorer_menu_pty(s, client, cmd)
             shell_pty(s, client, cmd, project)
             client, sleeper = processes_pty(s, client, tmp)
             sessions_pty(s, client, launcher, tmp, sleeper)
@@ -708,6 +733,47 @@ def editor_pty(s, client, cmd, project):
     found = wait_until(lambda: any(l.startswith("Find") for l in s.screen("Editor").splitlines()))
     client.send(ESC, pause=0.5)
     check("⌘F abre la búsqueda de Micro", found)
+    lines = lambda: notes.read_text().splitlines()
+    client.send(cmd["⌘A"], b"alpha", cmd["⌘S"], pause=0.8)
+    wait_until(lambda: lines()[:1] == ["alpha"])
+    client.send(cmd["⌘/"], cmd["⌘S"], pause=0.8)
+    commented = wait_until(lambda: lines()[:1] == ["// alpha"])
+    client.send(cmd["⌘/"], cmd["⌘S"], pause=0.8)
+    check("⌘/ comenta y descomenta la línea",
+          commented and wait_until(lambda: lines()[:1] == ["alpha"]), str(lines()[:2]))
+    client.send(cmd["⌘]"], cmd["⌘S"], pause=0.8)
+    indented = wait_until(lambda: lines()[:1] in (["  alpha"], ["\talpha"]))
+    client.send(cmd["⌘["], cmd["⌘S"], pause=0.8)
+    check("⌘] indenta la línea y ⌘[ quita la sangría",
+          indented and wait_until(lambda: lines()[:1] == ["alpha"]), str(lines()[:2]))
+    client.send(b"\x1b[1;4B", cmd["⌘S"], pause=0.8)
+    duplicated = wait_until(lambda: lines()[:2] == ["alpha", "alpha"])
+    client.send(cmd["⌘⇧K"], cmd["⌘S"], pause=0.8)
+    check("⌥⇧↓ duplica la línea y ⌘⇧K la borra",
+          duplicated and wait_until(lambda: lines()[:1] == ["alpha"] and len(lines()) == 1), str(lines()[:3]))
+    client.send(b"\x1b[A", cmd["⌘L"], b"Z", cmd["⌘S"], pause=0.8)
+    check("⌘L selecciona la línea (escribir la sustituye)", wait_until(lambda: lines()[:1] == ["Z"]), str(lines()[:2]))
+    probe = project / "src" / "zeta_probe.txt"
+    probe.write_text("uno\nneedle-vk-77 aquí\ntres\n")
+    client.send(cmd["⌘⇧F"], pause=1.0)
+    client.send(b"needle-vk-77", pause=2.0)
+    shown = wait_until(lambda: (p := s.pane(SEARCH_TITLE)) and "zeta_probe.txt:2" in s.plugin_view(pane_id(p)), timeout=8)
+    client.send(ENTER, pause=1.5)
+    check("⌘⇧F busca en el proyecto y Enter abre el resultado en su línea",
+          shown and wait_until(lambda: s.pane(SEARCH_TITLE) is None and micro_status(s).startswith("src/zeta_probe.txt (2,")),
+          micro_status(s)[:50])
+    client.send(cmd["⌘W"], pause=0.8)  # la pestaña del resultado
+    client.send(cmd["⌘⇧F"], pause=1.0)
+    client.send(b"needle-vk-77", b"\t", b"needle-new", pause=2.0)
+    client.send(ENTER, pause=2.0)
+    asked = wait_until(lambda: (p := s.pane(SEARCH_TITLE)) and "reemplazar en 1 archivo" in s.plugin_view(pane_id(p)), timeout=8)
+    client.send(ENTER, pause=2.5)
+    check("⌘⇧F: Tab añade «Reemplazar»; Enter pide confirmación y otro Enter reemplaza en el proyecto",
+          asked and wait_until(lambda: "needle-new aquí" in probe.read_text() and s.pane(SEARCH_TITLE) is None),
+          probe.read_text()[:40])
+    client.send(ESC, pause=0.5)
+    client.send(cmd["⌘P"], b"notes", ENTER, pause=1.2)
+    wait_until(lambda: micro_status(s).startswith("src/notes.ts "))
     client.send(cmd["⌘A"], b"vk-all", cmd["⌘S"], pause=0.8)
     check("⌘A selecciona todo (lo escrito lo sustituye)",
           wait_until(lambda: notes.read_text().strip() == "vk-all"), notes.read_text()[:30])
@@ -740,6 +806,13 @@ def explorer_pty(s, client, cmd, project):
           wait_until(lambda: micro_status(s).startswith(DEMO_FILE + " ")) and s.focused() == "Explorador"
           and micro_tabs(s).count(DEMO_FILE) == 1 and micro_tabs(s).count("src/App.tsx") == 1,
           micro_tabs(s).strip(), s)
+    outside = project / "src" / "zz-externo.txt"
+    outside.write_text("creado desde fuera\n")
+    check("un archivo creado desde fuera aparece solo en el explorador",
+          wait_until(lambda: "zz-externo.txt" in "\n".join(s.explorer()), timeout=5), "\n".join(s.explorer())[-200:])
+    outside.unlink()
+    check("y desaparece al borrarlo",
+          wait_until(lambda: "zz-externo.txt" not in "\n".join(s.explorer()), timeout=5))
     client.send(DOWN, DOWN, ENTER, pause=1.0)
     footer = wait_until(lambda: (lambda v: "binario" in v[-1] and v[-1])(s.explorer()))
     check("un archivo binario no se abre: aviso en el explorador",
@@ -913,9 +986,10 @@ def dimming_pty(s, client, cmd):
     client.recorded = None
 
 
-def cached_permissions():
+def cached_permissions(cache=PERMISSIONS_CACHE):
     wasm = ROOT / "plugins" / "vkterm" / "target" / "wasm32-wasip1" / "release" / "vkterm.wasm"
-    found = re.search(r'"/%s" \{([^}]*)\}' % re.escape(str(wasm)), PERMISSIONS_CACHE.read_text())
+    text = cache.read_text() if cache.exists() else ""
+    found = re.search(r'"/%s" \{([^}]*)\}' % re.escape(str(wasm)), text)
     return set(found.group(1).split()) if found else set()
 
 
@@ -1275,6 +1349,80 @@ def context_menu_pty(s, client, cmd, project):
     target.unlink()
 
 
+def explorer_menu_pty(s, client, cmd):
+    print("Menú del explorador con el teclado (⌘. y ⇧F10)")
+    # Zellij 0.45.1 no les pasa el clic derecho a los plugins: el menú del
+    # explorador se abre con ⌘. (desde cualquier panel) o con ⇧F10.
+    def menu():
+        pane = s.pane(MENU_TITLE)
+        return pane if pane and pane["is_floating"] and pane["is_focused"] else None
+
+    def closed(focus):
+        return wait_until(lambda: s.pane(MENU_TITLE) is None and s.focused() == focus)
+
+    explorer = s.pane("Explorador")
+    client.send(cmd["⌘1"], HOME, pause=0.6)
+    client.send(cmd["⌘."], pause=0.8)
+    opened = wait_until(menu)
+    view = s.plugin_view(pane_id(opened)) if opened else ""
+    # Debajo de la primera fila, donde empieza su nombre.
+    corner = (explorer["pane_content_x"] + 4, explorer["pane_content_y"] + 2)
+    check("⌘. abre el menú del explorador debajo de lo seleccionado, con el foco y sus entradas",
+          opened and (opened["pane_x"], opened["pane_y"]) == corner
+          and all(e in view for e in ("Nuevo archivo", "Renombrar", "Mostrar en Finder", "Paleta de comandos")),
+          "menú en %s, esperado en %s" % (opened and (opened["pane_x"], opened["pane_y"]), corner), s)
+    client.send(ESC, pause=0.8)
+    check("Esc lo cierra y el foco vuelve al explorador", closed("Explorador"), session=s)
+    client.send(b"\x1b[21;2~", pause=0.8)
+    check("⇧F10 en el explorador también lo abre", wait_until(menu), session=s)
+    client.send(ESC, pause=0.8)
+    closed("Explorador")
+    client.send(cmd["⌘2"], pause=0.6)
+    client.send(cmd["⌘."], pause=0.8)
+    opened = wait_until(menu)
+    if opened:
+        client.send(DOWN, ENTER, pause=1.0)
+    check("desde el editor, ⌘. abre el menú y «Nuevo archivo…» con ↓ Enter, su ventana",
+          opened and wait_until(lambda: (p := s.pane(NEWFILE_TITLE)) and p["is_focused"]), session=s)
+    client.send(ESC, pause=1.0)
+    wait_until(lambda: s.pane(NEWFILE_TITLE) is None)
+    client.send(cmd["⌘B"], pause=1.0)
+    hidden = wait_until(lambda: "Explorador" in s.hidden())
+    client.send(cmd["⌘."], pause=1.0)
+    check("con el explorador oculto (⌘B), ⌘. lo muestra y abre el menú",
+          hidden and wait_until(menu) and "Explorador" not in s.hidden(), "oculto=%s" % bool(hidden), s)
+    client.send(ESC, pause=0.8)
+    check("y Esc deja el foco en el explorador", closed("Explorador"), session=s)
+    client.send(cmd["⌘2"], pause=0.6)
+
+    # El clic derecho llega al explorador y al editor sin el foco solo con el
+    # Zellij de scripts/build-zellij.sh (patches/zellij), que bin/vkterm-workspace
+    # usa si está compilado.
+    patched = Path(run(str(ROOT / "scripts" / "build-zellij.sh"), "--path").strip())
+    if not (patched.is_file() and os.access(patched, os.X_OK)):
+        print("  · clic derecho en el explorador: sin comprobar (Zellij sin el parche; scripts/build-zellij.sh)")
+        return
+    explorer, rows = s.pane("Explorador"), s.explorer()
+    y = next((i for i, l in enumerate(rows) if l.strip().endswith("src")), None)
+    if y is not None:
+        right_click(client, explorer["pane_content_x"] + rows[y].index("src") + 1, explorer["pane_content_y"] + y)
+    opened = wait_until(menu)
+    view = s.plugin_view(pane_id(opened)) if opened else ""
+    check("clic derecho en el explorador, con el foco en el editor: su menú (Zellij con el parche)",
+          opened and "Renombrar" in view, "fila de src: %s" % y, s)
+    client.send(ESC, pause=0.8)
+    closed("Explorador")
+    editor = s.pane("Editor")
+    client.send(cmd["⌘5"], pause=0.6)
+    right_click(client, editor["pane_content_x"] + 8, editor["pane_content_y"] + 2)
+    opened = wait_until(menu)
+    view = s.plugin_view(pane_id(opened)) if opened else ""
+    check("clic derecho en el editor con el foco en el Shell: lo enfoca y abre su menú (Zellij con el parche)",
+          opened and "Copiar" in view and "Renombrar" not in view, session=s)
+    client.send(ESC, pause=0.8)
+    closed("Editor")
+    client.send(cmd["⌘2"], pause=0.6)
+
 def shell_pty(s, client, cmd, project):
     print("Shell: sin conflictos con ⌘S y ⌘V")
     shell = s.pane("Shell")
@@ -1283,6 +1431,42 @@ def shell_pty(s, client, cmd, project):
     client.send(cmd["⌘S"], b"echo vk-f2-ok", ENTER, pause=0.8)
     screen = wait_until(lambda: (lambda t: "\nvk-f2-ok" in t and t)(s.screen(shell)))
     check("⌘S en el prompt no deja basura", screen and "OQ" not in screen)
+    # Lo que ve un servidor por ssh: solo los terminfo del sistema (un VPS no
+    # tiene el de Ghostty). Con xterm-ghostty fallaban ⌃L, clear, nano y htop.
+    s.action("write-chars", "-p", pane_id(shell),
+             "echo vk-term=$TERM; (env -u TERMINFO TERMINFO_DIRS=/usr/share/terminfo HOME=/var/empty "
+             "tput clear >/dev/null 2>&1 && echo vk-remote=ok) || echo vk-remote=falla")
+    s.action("send-keys", "-p", pane_id(shell), "Enter")
+    remote = wait_until(lambda: next((l.strip() for l in s.screen(shell).splitlines()
+                                      if l.startswith("vk-remote=")), None))
+    term = next((l.strip() for l in s.screen(shell).splitlines() if l.startswith("vk-term=")), "")
+    check("el Shell tiene un TERM que un servidor por ssh entiende (⌃L, clear, nano)",
+          term == "vk-term=xterm-256color" and remote == "vk-remote=ok", "%s · %s" % (term, remote))
+    # Arrastrar en el Shell con el foco en el editor: el mismo arrastre enfoca
+    # el Shell y selecciona (mouse_click_through), y al soltar Zellij lo copia
+    # por OSC 52, que Ghostty pasa al portapapeles de macOS. Sin esa opción, el
+    # primer arrastre solo enfocaba y ⌘C no tenía nada que copiar.
+    s.action("write-chars", "-p", pane_id(shell), "clear; echo vk-seleccion-ok\n")
+    rows = wait_until(lambda: (lambda r: any(l.strip() == "vk-seleccion-ok" for l in r) and r)(
+        s.screen(shell).splitlines()))
+    client.send(cmd["⌘2"])
+    wait_until(lambda: s.focused() == "Editor", timeout=3)
+    copied = None
+    if rows:
+        y = next(i for i, l in enumerate(rows) if l.strip() == "vk-seleccion-ok")
+        x = shell["pane_content_x"] + rows[y].index("vk-seleccion-ok") + 1
+        y += shell["pane_content_y"] + 1
+        end = x + len("vk-seleccion-ok")  # la celda donde se suelta no entra
+        client.record()
+        client.send(b"\x1b[<0;%d;%dM" % (x, y), *(b"\x1b[<32;%d;%dM" % (c, y) for c in range(x + 1, end + 1)),
+                    b"\x1b[<0;%d;%dm" % (end, y), pause=0.05)
+        copied = wait_until(lambda: (m := re.search(rb"\x1b\]52;c;([A-Za-z0-9+/=]+)", bytes(client.recorded)))
+                            and base64.b64decode(m.group(1)).decode(errors="replace"), timeout=3)
+        client.recorded = None
+    check("arrastrar en el Shell sin el foco lo enfoca, selecciona y copia al soltar (OSC 52)",
+          copied == "vk-seleccion-ok" and s.focused() == "Shell",
+          "copiado: %r · foco: %s" % (copied, s.focused()))
+    client.send(cmd["⌘5"])
     client.send(b"cho vk-home", cmd["⌘←"], b"e", cmd["⌘→"], b"-end", ENTER, pause=0.8)
     check("⌘← / ⌘→ van al inicio / fin de línea en el shell",
           wait_until(lambda: "\nvk-home-end" in s.screen(shell)))
@@ -1444,6 +1628,80 @@ def confirm_view(s):
 
 def ended(client, s):
     return wait_until(lambda: not client.alive() and s.name not in sessions(), timeout=15)
+
+
+def scenario_permissions(cmd, tmp):
+    """La caché de Zellij vaciada con la carpeta abierta (un limpiador, o macOS
+    cuando falta espacio): Zellij olvidaba los permisos del plugin y cada
+    ventana nueva se quedaba escondida pidiendo «Allow? (y/n)», así que ni
+    ⌘K ⌘S ni el clic derecho mostraban nada. Con un HOME falso, para no tocar
+    la caché del usuario (la comparten sus sesiones abiertas)."""
+    print("\nPermisos del plugin con la caché de Zellij vaciada (HOME falso)")
+    home = tmp / "permisos-home"
+    home.mkdir()
+    (home / ".zshrc").write_text("")  # sin el asistente de zsh para usuarios nuevos
+    cache = home / "Library" / "Caches" / "org.Zellij-Contributors.Zellij" / "permissions.kdl"
+    project = new_project(tmp, "permisos")
+    before = sessions()
+    client = Client([str(ROOT / "bin" / "vkterm"), "--here", str(project)], tmp, {"HOME": str(home)})
+    name = wait_new_session(before, timeout=60)
+    try:
+        if not name:
+            check("la sesión arranca con la caché de Zellij vacía", False)
+            return
+        s = Session(name)
+        explorer = wait_until(lambda: s.pane("Explorador"), timeout=30)
+        view = explorer and wait_until(lambda: (v := s.plugin_view(pane_id(explorer))) and "src" in v and v,
+                                       timeout=20)
+        check("con la caché vacía, el explorador no pide permisos: bin/vkterm-permissions los guardó",
+              view and "Allow?" not in view and PLUGIN_PERMISSIONS <= cached_permissions(cache),
+              ", ".join(sorted(cached_permissions(cache))))
+        if not view:
+            grant_plugin(s)
+        wait_until(lambda: set(TITLES) <= {p["title"] for p in s.panes()}, timeout=30)
+        wait_until(lambda: micro_status(s), timeout=10)
+        time.sleep(1.5)
+
+        def floating():
+            return [p for p in s.panes() if p["is_plugin"] and p["is_floating"]]
+
+        def asking():
+            return any(p["title"].endswith("vkterm") for p in floating())
+
+        # La ventana se queda pidiendo permisos y el explorador le contesta
+        # «y». Si repuso los permisos justo antes del atajo (lo hace cada
+        # 10 s), se abre sin pedirlos.
+        cache.unlink()
+        client.send(cmd["⌘2"], pause=0.3)
+        client.send(cmd["⌘K ⌘S"], pause=0.5)
+        asked = wait_until(asking, timeout=3)
+        opened = wait_until(lambda: (p := s.pane(SHORTCUTS_TITLE)) and p["is_focused"], timeout=10)
+        notice = "permisos" in "\n".join(s.explorer())
+        client.send(ESC, pause=1.0)
+        check("con la caché vaciada, ⌘K ⌘S abre la ventana de atajos sin repetir el atajo, y avisa",
+              opened and cache.exists() and (notice or not asked) and not floating(),
+              "pidió permisos=%s aviso=%s" % (bool(asked), notice), s)
+
+        cache.unlink()
+        check("con la carpeta abierta, el explorador repone los permisos él solo (cada 10 s)",
+              wait_until(lambda: PLUGIN_PERMISSIONS <= cached_permissions(cache), timeout=15))
+
+        cache.unlink()
+        editor = s.pane("Editor")
+        x, y = editor["pane_content_x"] + 2, editor["pane_content_y"] + 1
+
+        def menu():
+            pane = s.pane(MENU_TITLE)
+            return pane if pane and pane["is_floating"] and pane["is_focused"] else None
+        client.send(cmd["⌘2"], pause=0.5)
+        right_click(client, x, y)
+        opened = wait_until(menu, timeout=10)
+        client.send(ESC, pause=0.8)
+        check("y el clic derecho en el editor abre el menú",
+              opened and wait_until(lambda: s.pane(MENU_TITLE) is None), session=s)
+    finally:
+        for created in sessions() - before:
+            run("zellij", "kill-session", created)
 
 
 def scenario_memory(cmd, tmp):
@@ -1880,6 +2138,14 @@ def keyboard_ghostty(s, keys, project, pid):
           opened and wait_until(lambda: "Escribe el mensaje del commit" in scm_view()), session=s)
     keys.send("cmd+shift+e", pause=1.0)
     check("⌘⇧E vuelve al explorador", wait_until(lambda: s.focused() == "Explorador"), session=s)
+    # ⌘. es también «cancelar» en macOS: tiene que llegar a la tabla del IDE.
+    for combo in ("cmd+period", "shift+f10"):
+        keys.send(combo, pause=1.0)
+        menu = wait_until(lambda: (p := s.pane(MENU_TITLE)) and p["is_floating"] and p["is_focused"])
+        keys.send("esc", pause=1.0)
+        check("%s abre el menú del clic derecho del explorador y Esc lo cierra"
+              % ("⌘." if combo == "cmd+period" else "⇧F10"),
+              menu and wait_until(lambda: s.pane(MENU_TITLE) is None and s.focused() == "Explorador"), session=s)
 
     clipboard = run("osascript", "-e", "clipboard info")
     text = run("pbpaste")
@@ -2399,7 +2665,13 @@ def main():
     tmp = Path(tempfile.mkdtemp(prefix="vkterm-smoke-"))
     try:
         cmd = check_config()
+        if "--only-permissions" in sys.argv[1:]:
+            scenario_permissions(cmd, tmp)
+            raise SystemExit(0 if all(r[1] for r in results) else 1)
         scenario_pty(cmd, tmp)
+        if "--only-editor" in sys.argv[1:]:
+            raise SystemExit(0 if all(r[1] for r in results) else 1)
+        scenario_permissions(cmd, tmp)
         scenario_memory(cmd, tmp)
         scenario_recent(cmd, tmp)
         scenario_scm(cmd, tmp)

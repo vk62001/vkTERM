@@ -83,7 +83,11 @@ en la de por defecto. Comprobado con eventos sintetizados:
   `super+shift+comma`), que no pone atajo en el menú;
 - **recargar la configuración vacía las tablas**. `bin/vkterm-theme` (cambio
   de tema y ⌘⇧,) las vuelve a activar con `bin/vkterm-surface reactivate`;
-  desde el menú de Ghostty no;
+  desde el menú de Ghostty no. Solo recarga el Ghostty que dibuja el
+  terminal del cliente de Zellij (el padre del primer proceso con su tty):
+  subir sin ese límite llegaba, desde el pseudoterminal de
+  `scripts/smoke-test.py`, al vkTERM.app en el que corrían las pruebas, y sus
+  pestañas del IDE se quedaban sin atajos;
 - mientras la tabla está activa, Ghostty 1.3 dibuja «⌨ vkterm» abajo en el
   centro, flotando sobre el terminal, y no tiene opción para ocultarlo.
   `scripts/build-ghostty.sh` compila Ghostty con `patches/ghostty`, que no lo
@@ -382,6 +386,7 @@ aunque su panel esté oculto.
 | `quick_open` | Foco al editor, Ctrl-E y `tab ` |
 | `paste` | Tras el ⌘V de Ghostty: si el foco está en Claude Code o Codex y el portapapeles solo tiene una imagen (`osascript -e 'clipboard info'`, `src/clipboard.rs`), les manda ⌃V, con el que la adjuntan |
 | `context_menu`, `menu_action` | Clic derecho en un Micro y lo elegido en su menú (ver «Menú contextual del editor») |
+| `explorer_menu` | ⌘.: el menú del explorador para lo seleccionado, debajo de ello; antes muestra el explorador y le da el foco. Zellij 0.45.1 no les pasa el clic derecho a los plugins (`PluginPane::handle_right_click` no se llama; su rama principal ya lo hace) |
 | `show_view` + `explorer`/`scm` | ⌘⇧E y ⌃⇧G: la vista de la barra lateral, que se muestra y recibe el foco |
 | `scm_commit` | ⌘Enter: commit, solo con el foco en Control de código fuente |
 | `git` + `commit`/`stage_all`/`unstage_all`/`pull`/`push`/`sync`/`fetch`/`compare`/`abort`/`refresh` | Los comandos «Git: …» de la paleta |
@@ -745,7 +750,15 @@ permiten moverlo:
 
 - Zellij: caché de plugins compilados y **permisos concedidos al plugin**
   (`~/Library/Caches/org.Zellij-Contributors.Zellij/`), socket y logs
-  (`$TMPDIR/zellij-<uid>/`).
+  (`$TMPDIR/zellij-<uid>/`). Zellij lee los permisos cada vez que carga una
+  instancia: si la caché se vacía con una sesión abierta, cada ventana nueva
+  se queda escondida pidiendo `Allow? (y/n)`. `bin/vkterm-permissions`
+  escribe la entrada del plugin (y solo esa) si falta: lo ejecutan
+  `bin/vkterm-workspace` antes de arrancar Zellij y el explorador cada
+  `PERMISSION_TICKS`. Si una ventana flotante del plugin sigue con el título
+  por defecto de Zellij (`… - vkterm`) tras `STUCK_TICKS`, el explorador le
+  contesta «y» (`zellij action send-keys`): cerrarla no sirve, porque Zellij
+  ya no vuelve a lanzar esa ventana.
 - `bin/vkterm-editor`: una marca vacía por sesión en `$TMPDIR`.
 - `config/zsh/vkterm.zsh`: una carpeta vacía por ventana abierta ya convertida
   (`$TMPDIR/vkterm-autostart-<nonce>`).
@@ -754,6 +767,10 @@ permiten moverlo:
   `~/Library/Caches/vkterm`), su registro en LaunchServices, el enlace
   `~/.local/bin/vkterm` con `--link` y los permisos que macOS guarda para la
   app (carpetas, Automatización).
+- `scripts/build-ghostty.sh` y `scripts/build-zellij.sh`: lo descargado y lo
+  intermedio en `~/Library/Caches/vkterm` (se puede borrar); las compilaciones
+  terminadas en `~/Library/Application Support/vkterm` (`ghostty-<versión>/`,
+  `zellij-<versión>/`), fuera de las cachés que macOS vacía si falta espacio.
 - Cargo: caché de crates en `~/.cargo/registry` (descargadas de crates.io).
 - Dentro del repositorio, ignorados por git: `plugins/vkterm/target/` y el
   estado local, `config/local/` (tema elegido, datos de Micro y copias de la
@@ -828,9 +845,11 @@ vkTERM/
 │   └── local/                 Estado (fuera de git): tema y fuente elegidos, datos de Micro
 ├── plugins/vkterm/            Plugin de Zellij (Rust → wasm32-wasip1)
 ├── patches/ghostty/           Parches de vkTERM a Ghostty (sin el indicador de tablas)
+├── patches/zellij/            Parches de vkTERM a Zellij (clic derecho en plugins y sin foco)
 ├── scripts/
 │   ├── build-plugins.sh       Compila el plugin (--if-needed, --test)
 │   ├── build-ghostty.sh       Compila Ghostty con patches/ghostty (para bin/vkterm-app)
+│   ├── build-zellij.sh        Compila Zellij con patches/zellij (para bin/vkterm-workspace)
 │   ├── build-dmg.sh           DMG con la vkTERM.app instalada (dist/)
 │   ├── gen-themes.py          Genera los temas desde los de VS Code (--check en CI)
 │   ├── test_gen_themes.py     Tests del generador

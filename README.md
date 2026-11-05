@@ -15,7 +15,7 @@ explorador de archivos,<br>editor con pestañas, Shell y agentes de IA
   <a href="https://github.com/vk62001/vkTERM/actions/workflows/ci.yml"><img src="https://github.com/vk62001/vkTERM/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-GPL--3.0--or--later-blue" alt="GPL-3.0-or-later"></a>
   <img src="https://img.shields.io/badge/plataforma-macOS-lightgrey" alt="macOS">
-  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/versi%C3%B3n-0.4.2-informational" alt="versión 0.4.2"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/versi%C3%B3n-0.5.0-informational" alt="versión 0.5.0"></a>
 </p>
 
 - **vkTERM.app** es tu terminal de todos los días (una copia local de Ghostty
@@ -98,9 +98,10 @@ bin/vkterm-app install          # con vkTERM.app cerrada (⌘Q)
 
 Necesita Xcode 26 con su Metal Toolchain
 (`xcodebuild -downloadComponent MetalToolchain`) y red: descarga Zig, el código
-de Ghostty y sus dependencias en `~/Library/Caches/vkterm`. `install` usa esa
-compilación si existe para la versión de tu Ghostty.app; si no, copia
-Ghostty.app tal cual. **Cada vez que actualices Ghostty**, repite los dos
+de Ghostty y sus dependencias en `~/Library/Caches/vkterm` y deja la app
+compilada en `~/Library/Application Support/vkterm` (macOS vacía las cachés
+cuando falta espacio). `install` usa esa compilación si existe para la versión
+de tu Ghostty.app; si no, copia Ghostty.app tal cual. **Cada vez que actualices Ghostty**, repite los dos
 comandos.
 
 ### DMG
@@ -175,9 +176,9 @@ La pestaña pasa a ser el IDE:
   Ghostty sin compilar ([arriba](#ghostty-sin-el-indicador)), Ghostty dibuja
   además su botón «⌨ vkterm» encima de la barra.
 - **Plugin.** `vkterm` lo compila automáticamente la primera vez y cuando
-  cambian sus fuentes. **La primera vez** (y cuando una versión nueva pide
-  permisos nuevos), el explorador pregunta `Allow? (y/n)` por los permisos del
-  plugin: haz clic en él y pulsa **y**.
+  cambian sus fuentes. Sus permisos de Zellij los guarda vkTERM
+  (`bin/vkterm-permissions`) y los repone si algo vacía `~/Library/Caches`,
+  también con la carpeta abierta: no hay que contestar `Allow? (y/n)`.
 - **Agentes.** Claude Code y Codex quedan en espera: pulsa **Enter** en su
   panel para arrancarlos.
 - **Ocultar no cierra nada.** Los procesos siguen vivos y cada panel vuelve a
@@ -239,6 +240,7 @@ Claude Code y Codex, como en el IDE. En el **modo IDE**:
 | ⌘W | Cerrar la pestaña del editor |
 | ⌘N | Nuevo archivo: pide el nombre y lo crea en la carpeta seleccionada del explorador |
 | ⌘R | Renombrar: pide el nombre nuevo (con `/` lo mueve) para lo seleccionado en el explorador |
+| ⌘. (o ⇧F10 en el explorador) | El menú del clic derecho del explorador para lo seleccionado: Nuevo archivo…, Renombrar…, Mostrar en Finder… |
 | ⌘P | Abrir archivo por nombre (búsqueda difusa, como VS Code) |
 | ⌘⇧P | Paleta de comandos |
 | ⌘S | Guardar |
@@ -249,9 +251,20 @@ Claude Code y Codex, como en el IDE. En el **modo IDE**:
 | ⌘Z · ⌘⇧Z | Deshacer · rehacer (en el editor) |
 | ⌘X · ⌘C · ⌘V | Cortar · copiar · pegar (sin selección, la línea entera) |
 | ⌘A · ⌘F | Seleccionar todo · buscar (en el editor) |
-| ⌘← · ⌘→ | Inicio · fin de línea |
+| ⌘← · ⌘→ · ⌘↑ · ⌘↓ | Inicio · fin de línea · principio · fin del archivo |
+| ⌘D | Añadir un cursor en la siguiente coincidencia (multicursor) |
+| ⌘/ | Comentar · descomentar la línea |
+| ⌘] · ⌘[ | Indentar · quitar sangría |
+| ⌘G · ⌘⇧G | Siguiente · anterior coincidencia de la búsqueda |
+| ⌘L · ⌘⇧K | Seleccionar la línea · borrar la línea |
+| ⌥↑ · ⌥↓ · ⌥⇧↑ · ⌥⇧↓ | Mover · duplicar la línea |
+| ⌘⇧F | Buscar y reemplazar en todo el proyecto (ripgrep; Tab añade «Reemplazar») |
+| F12 · ⇧F12 | Ir a la definición · buscar referencias (LSP) |
+| ⌘I · ⌘K ⌘I | Sugerencias · información del símbolo (LSP) |
+| ⌘K ⌘R · ⌘K ⌘F · ⌘⇧O | Cambiar el nombre del símbolo · dar formato · símbolos del archivo (LSP) |
 | ⌘⌥↑ · ⌘⌥↓ | Foco al panel de arriba · abajo |
 | ⌘K Z | Ampliar o restaurar el panel |
+| ⌘K ⌘C | Copiar todo el historial del panel con el foco |
 | Ctrl g | Desbloquear Zellij (después p panel, t pestaña, o sesión) |
 
 **Clic derecho en el editor:** un menú como el de VS Code, junto al puntero,
@@ -264,6 +277,8 @@ con Cortar, Copiar, Pegar, Seleccionar todo y Paleta de comandos…
 - **Enter** abre el archivo en una pestaña.
 - **Espacio** lo abre sin salir del explorador.
 - Una letra salta a la siguiente entrada que empieza por ella.
+- **⌘.** o **⇧F10** abren el menú del clic derecho de lo seleccionado. El clic
+  derecho no llega al explorador con Zellij 0.45.1 (sí al editor).
 - Los archivos con cambios de git van en su color, con la letra a la derecha
   como en VS Code: M modificado, U nuevo, A añadido, ! conflicto; las
   carpetas con cambios dentro llevan •, y lo ignorado sale apagado.

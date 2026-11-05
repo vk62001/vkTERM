@@ -23,9 +23,9 @@ cd /Volumes/Apps/desarrollo/vkTERM/examples/demo && vkterm .
 La pestaña pasa a ser el IDE de demo. La primera vez, el arranque tarda unos
 segundos más porque se compila el plugin.
 
-**Solo la primera vez**, el panel del explorador pregunta
-`Allow? (y/n)`: haz clic en ese panel y pulsa **y**. Zellij guarda la
-respuesta.
+El explorador **no** debe preguntar `Allow? (y/n)`: vkTERM guarda los
+permisos del plugin en la caché de Zellij (`bin/vkterm-permissions`). Si lo
+pregunta, anótalo como fallo, pulsa **y** en ese panel y sigue.
 
 Anota ✔ / ✘ en cada fila. Si algo falla, anota también qué ves en la barra
 de estado (abajo; tras Ctrl g muestra NORMAL) y en qué panel estaba el foco:
@@ -120,6 +120,7 @@ es el panel con el marco resaltado.
 | G2d | En el editor: ⌘X sin selección | Corta la línea entera. |
 | G2e | En el editor: ⌘A y luego ⌘F | Selecciona todo; ⌘F abre "Find:" abajo (Esc lo cierra). |
 | G2f | En Shell: `sleep 30`, Enter, ⌘Z y ⌘X | `sleep` sigue en marcha: no se suspende. |
+| G2g | Con el foco en el editor (⌘2), arrastrar con el ratón sobre una palabra del Shell y soltar; ir a otra app y pegar | El mismo arrastre enfoca el Shell y selecciona; al soltar se copia: se pega esa palabra. |
 | G3 | ⌘V en Shell con un texto de varias líneas | Se pega en el prompt **sin ejecutarse**. |
 | G4 | En Shell: `sleep 30`, Enter, ⌘C | `sleep` **no** se interrumpe. |
 | G5 | En Shell: `for i in $(seq 20); do echo $i; sleep 0.3; done` y ⌘S a mitad | La salida **no** se congela (puede aparecer `^[OQ`). |
@@ -183,7 +184,7 @@ es el panel con el marco resaltado.
 | O3 | Poner el cursor junto a un `{` | Su pareja `}` se resalta con el color del tema. |
 | O4 | Abrir un archivo con sangría (Header.tsx) | Rayas finas `│` en cada nivel de sangría. |
 
-## Q. Menú contextual del editor (clic derecho)
+## Q. Menú contextual (clic derecho en el editor; ⌘. en el explorador)
 
 | # | Acción | Resultado esperado |
 |---|---|---|
@@ -193,6 +194,8 @@ es el panel con el marco resaltado.
 | Q4 | Clic derecho y pasar el ratón por las entradas; luego ↑ ↓ y Esc | Se resalta la entrada bajo el ratón; las flechas se saltan las rayas; Esc cierra y el foco vuelve al editor. |
 | Q5 | Clic derecho, clic fuera del menú, y otra vez clic derecho en otro sitio | El clic fuera lo cierra; el segundo clic derecho vuelve a abrirlo, en su sitio. |
 | Q6 | Clic derecho cerca del borde derecho y del de abajo del editor; luego «Paleta de comandos…» | El menú se abre hacia la izquierda o hacia arriba, sin salirse. La entrada abre la paleta de comandos. |
+| Q7 | ⌘1, seleccionar `src` y pulsar **⌘.**; ↓ ↓ Enter | Debajo de `src`, el menú del explorador (Nuevo archivo… ⌘N, Renombrar… ⌘R, Mostrar en Finder…). Renombrar… pide el nombre nuevo de `src`; Esc cancela. **Si no pasa nada, o macOS emite un pitido, anótalo.** |
+| Q8 | ⌘2 y **⌘.**; luego Esc. Después ⌘1 y **⇧F10** (con fn si las F son de sistema) | ⌘. desde el editor pasa el foco al explorador y abre el menú; Esc lo cierra y el foco queda en el explorador. ⇧F10 también lo abre. El clic derecho en el explorador no hace nada (Zellij 0.45.1). |
 
 ## K. vkTERM.app y modo terminal
 
@@ -271,5 +274,9 @@ de cada carpeta vive en `config/local/projects/`.
   un Ghostty normal, y que la barra de estado empieza por «⌨ vkTERM».
 - Si ⌘B / ⌘J / ⌘1 no hacen nada pero ⌘S sí: probablemente el plugin no tiene
   permisos. Mira si el explorador muestra `Allow? (y/n)`.
+- Si ⌘K ⌘S, el clic derecho o la paleta tardan unos segundos y el explorador
+  avisa de que Zellij había olvidado los permisos: es lo esperado si algo
+  vació `~/Library/Caches`. Si no aparecen, ejecuta `scripts/doctor.sh` y
+  anota lo que dice en «Sesiones abiertas».
 - Si falla solo un atajo concreto: puede interceptarlo un atajo global de otra
   app (Rectangle, utilidades del sistema). Prueba con esa app cerrada.

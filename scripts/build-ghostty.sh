@@ -17,8 +17,12 @@
 # Hace falta Xcode 26 con su componente Metal Toolchain
 # (xcodebuild -downloadComponent MetalToolchain) y red: se descargan Zig (la
 # versión que pide Ghostty, comprobada con su SHA-256), el código de Ghostty
-# (la etiqueta vVERSIÓN de GitHub) y sus dependencias. Todo queda en
-# ~/Library/Caches/vkterm; la primera compilación tarda unos minutos.
+# (la etiqueta vVERSIÓN de GitHub) y sus dependencias; la primera compilación
+# tarda unos minutos. Lo descargado y lo intermedio van a ~/Library/Caches/vkterm
+# (se puede rehacer); la app compilada, a ~/Library/Application Support/vkterm:
+# macOS vacía las cachés cuando falta espacio en el disco, y el 4 de noviembre
+# de 2026 se llevó la compilación, con lo que bin/vkterm-app volvía en
+# silencio a la Ghostty sin parches.
 #
 # Dos arreglos para las herramientas de Xcode 26, con un xcrun y un libtool
 # propios delante en el PATH de la compilación:
@@ -35,6 +39,7 @@ setopt err_exit no_unset pipe_fail extended_glob
 
 vkterm_home=${0:A:h:h}
 cache=${VKTERM_BUILD_CACHE:-$HOME/Library/Caches/vkterm}
+support=${VKTERM_SUPPORT_DIR:-$HOME/Library/Application Support/vkterm}
 say() { print -r -- "build-ghostty: $*" }
 fail() { print -u2 -r -- "build-ghostty: $*"; exit 1 }
 
@@ -53,8 +58,9 @@ version=${1:-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
 [[ -n $version ]] || fail "no se encuentra /Applications/Ghostty.app: indica la versión (p. ej. 1.3.1)."
 [[ $version == [0-9.]## ]] || fail "versión no válida: $version"
 dir=$cache/ghostty-$version
+target=$support/ghostty-$version/Ghostty.app
 if (( path_only )); then
-  print -r -- $dir/Ghostty.app
+  print -r -- $target
   exit 0
 fi
 [[ $(uname -m) == arm64 ]] || fail "solo está preparado para Macs con Apple Silicon."
@@ -153,13 +159,14 @@ say "compilando Ghostty $version con los parches de vkTERM (unos minutos)…"
 (cd $src && PATH=$tools:$PATH $zig build -Doptimize=ReleaseFast -Dxcframework-target=native) \
   || fail "la compilación falló."
 [[ -d $src/zig-out/Ghostty.app ]] || fail "la compilación no dejó zig-out/Ghostty.app."
-rm -rf $dir/Ghostty.app.tmp
-ditto $src/zig-out/Ghostty.app $dir/Ghostty.app.tmp
+mkdir -p ${target:h}
+rm -rf $target.tmp
+ditto $src/zig-out/Ghostty.app $target.tmp
 # Xcode deja la versión de su proyecto (0.1): la de la etiqueta, la que mira
 # bin/vkterm-app. La firma la rehace bin/vkterm-app al crear vkTERM.app.
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" \
-  -c "Set :CFBundleVersion $version" $dir/Ghostty.app.tmp/Contents/Info.plist
-rm -rf $dir/Ghostty.app
-mv $dir/Ghostty.app.tmp $dir/Ghostty.app
-say "listo: $dir/Ghostty.app"
+  -c "Set :CFBundleVersion $version" $target.tmp/Contents/Info.plist
+rm -rf $target
+mv $target.tmp $target
+say "listo: $target"
 say "crea vkTERM.app con ella: bin/vkterm-app install (con vkTERM.app cerrada)."

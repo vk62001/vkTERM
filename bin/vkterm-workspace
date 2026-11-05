@@ -55,6 +55,12 @@ if [[ -n ${ZELLIJ:-} ]]; then
   exit 1
 fi
 
+# El Zellij con los parches de vkTERM (scripts/build-zellij.sh: el clic
+# derecho llega al explorador y a los paneles sin el foco), si está compilado
+# para la versión instalada. También lo usan los paneles de la sesión.
+patched_zellij=$($vkterm_home/scripts/build-zellij.sh --path 2>/dev/null || true)
+[[ -n $patched_zellij && -x $patched_zellij ]] && path=(${patched_zellij:h} $path)
+
 for tool in zellij micro; do
   if (( ! $+commands[$tool] )); then
     print -u2 "vkterm: no se encuentra '$tool' en el PATH (ver scripts/doctor.sh)."
@@ -64,6 +70,9 @@ done
 
 # Plugin vkterm (explorador y controlador): se compila si falta o cambió.
 $vkterm_home/scripts/build-plugins.sh --if-needed
+# Sus permisos en la caché de Zellij: si alguien la vació, el explorador y cada
+# ventana se quedarían pidiendo «Allow? (y/n)».
+VKTERM_HOME=$vkterm_home $vkterm_home/bin/vkterm-permissions >/dev/null || true
 
 # Nombre corto y estable: vk-<proyecto>-<huella>. La huella (6 hex) mezcla la
 # ruta del proyecto (distingue proyectos con igual nombre) y todos los archivos

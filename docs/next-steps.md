@@ -1,5 +1,33 @@
 # Próximos pasos: GitHub y plugins
 
+## 0g. Estudio: rehacer vkTERM en Rust, 05-11-2026 (sin decidir)
+
+Tras los arreglos de 0.5.0 se estudió si conviene rehacer vkTERM en Rust. La
+recomendación es ir por partes: primero un multiplexor propio que sustituya a
+Zellij dentro de Ghostty, y decidir después si se hace una app nativa. Todo el
+detalle, con cómo retomarlo, está en
+[estudio-reescritura-rust.md](estudio-reescritura-rust.md).
+
+## 0f. Edición, búsqueda en el proyecto y LSP, 03-11-2026 (sin publicar, rama `main`)
+
+Hecho: multicursor, comentar, indentar, mover / duplicar / borrar línea,
+siguiente / anterior coincidencia, ⌘⇧F (buscar y reemplazar con ripgrep),
+cableado del LSP de H1 (F12, ⇧F12, ⌘I, ⌘K ⌘I, ⌘K ⌘R, ⌘K ⌘F, ⌘⇧O),
+historial y blame del archivo, dividir el editor, autoguardado y «Git:
+Iniciar repositorio» desde la paleta. `smoke-test.py` cubre la edición y ⌘⇧F;
+`--only-editor` ejecuta solo ese escenario.
+
+Pendiente:
+
+1. Probar con el teclado físico y en Ghostty real: ⌘D ⌘/ ⌘] ⌘[ ⌘G ⌘L ⌘⇧K,
+   ⌘⇧F, F12 ⇧F12 ⌘I ⌘K ⌘I ⌘K ⌘R ⌘K ⌘F ⌘⇧O. Los de LSP aún no tienen prueba
+   automática de teclas (el LSP en sí sí se comprobó en un Micro real).
+2. ⌘] y ⌘[ son las teclas físicas de esos símbolos del teclado de EE. UU.; en
+   el español ISO pueden quedar en otra tecla. Decidir si se cambian.
+3. Sin hacer: plegado, minimapa, migas de pan, panel de Problemas global,
+   depurador, tareas, snippets y varias carpetas por ventana.
+
+
 ## 0e. Control de código fuente (⌃⇧G), 03-11-2026 (sin publicar, rama `temas-vscode`)
 
 El hito H2 de la Fase 2, adelantado a petición del usuario («no veo mis

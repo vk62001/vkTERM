@@ -47,14 +47,15 @@ pub struct Tree {
 impl Tree {
     /// Guarda el contenido de una carpeta: primero carpetas, después archivos,
     /// sin distinguir mayúsculas (como VS Code).
-    pub fn set_listing(&mut self, dir: &Path, mut entries: Vec<DirEntry>) {
+    /// Guarda el contenido de una carpeta; true si cambió respecto al anterior.
+    pub fn set_listing(&mut self, dir: &Path, mut entries: Vec<DirEntry>) -> bool {
         entries.sort_by(|a, b| {
             b.is_dir
                 .cmp(&a.is_dir)
                 .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
                 .then_with(|| a.name.cmp(&b.name))
         });
-        self.listings.insert(dir.to_path_buf(), entries);
+        self.listings.insert(dir.to_path_buf(), entries.clone()) != Some(entries)
     }
 
     pub fn is_loaded(&self, dir: &Path) -> bool {

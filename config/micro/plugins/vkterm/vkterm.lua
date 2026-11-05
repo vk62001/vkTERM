@@ -185,6 +185,22 @@ function contextmenu(bp, e)
     return true
 end
 
+-- ⌘] : indenta la selección o, sin ella, la línea (como VS Code; Tab de Micro
+-- solo indenta con selección). Lo escribe el plugin vkterm de Zellij como Alt-$.
+function indent(bp)
+    if bp.Cursor:HasSelection() then
+        bp:IndentSelection()
+    else
+        local x = bp.Cursor.X
+        bp:SelectLine()
+        bp:IndentSelection()
+        bp.Cursor:ResetSelection()
+        bp.Cursor.X = x + 1
+        bp.Cursor:Relocate()
+    end
+    return true
+end
+
 function postinit()
     watch_theme()
     if not enabled then return end
@@ -197,7 +213,32 @@ function postinit()
     remember()
 end
 
+-- Ventana flotante de Zellij con `vkterm-git ACCIÓN archivo` (historial y
+-- blame del archivo de esta pestaña). Fuera de Zellij no hace nada.
+local function git_window(bp, action)
+    local path = bp.Buf.AbsPath
+    if bp.Buf.Path == "" or path == "" then
+        micro.InfoBar():Error("Este archivo aún no está guardado")
+        return
+    end
+    if goos.Getenv("ZELLIJ") == "" then return end
+    local dir = path:match("^(.*)/[^/]*$") or "."
+    shell.JobSpawn("zellij", { "action", "new-pane", "--floating", "--close-on-exit", "--cwd", dir,
+        "--name", "git " .. action .. " " .. path:match("[^/]*$"),
+        "--x", "5%", "--y", "6%", "--width", "90%", "--height", "88%",
+        "--", "vkterm-git", action, path }, nil, nil, function() end)
+end
+
 function init()
+    config.MakeCommand("vkterm.history", function(bp) git_window(bp, "log") end, config.NoComplete)
+    config.MakeCommand("vkterm.blame", function(bp) git_window(bp, "blame") end, config.NoComplete)
+    -- Dividir el editor con el mismo archivo (VS Code: «Split Editor»).
+    config.MakeCommand("vkterm.splitright", function(bp)
+        if bp.Buf.Path ~= "" then bp:VSplitCmd({ bp.Buf.Path }) else bp:VSplitCmd({}) end
+    end, config.NoComplete)
+    config.MakeCommand("vkterm.splitdown", function(bp)
+        if bp.Buf.Path ~= "" then bp:HSplitCmd({ bp.Buf.Path }) else bp:HSplitCmd({}) end
+    end, config.NoComplete)
     -- «Mostrar en Finder» del menú contextual: el archivo de esta pestaña.
     config.MakeCommand("vkterm.reveal", function(bp)
         local path = bp.Buf.AbsPath

@@ -11,6 +11,7 @@
 #                                        sigue viva para otra (bin/vkterm)
 #   vkterm-surface open DIR [ACCIÓN]     ventana nueva ya convertida en el IDE de DIR
 #   vkterm-surface reactivate            vuelve a activar el modo IDE en sus pestañas
+#   vkterm-surface keep ID PID           mantiene el modo IDE en ID mientras viva PID
 #
 # El modo IDE es la tabla de atajos `vkterm` de config/ghostty/vkterm.ghostty.
 # Una pestaña no sabe su propio id: bin/vkterm le pone un título único (OSC 2)
@@ -133,6 +134,38 @@ OSA
       running && new_window
     fi
     ;;
+  keep)
+    # Mientras viva el bin/vkterm PID (el IDE de la pestaña ID), vuelve a
+    # activar el modo IDE cada 2 s. Ghostty vacía las tablas de atajos en cada
+    # recarga de su configuración (Surface.updateConfig), también en las que
+    # no hace vkTERM y que `reactivate` no ve: «Reload Configuration» del menú
+    # o macOS al pasar de claro a oscuro. La pestaña se quedaba sin ningún
+    # atajo ⌘ (⌘C ya no copiaba en el editor). Activar la tabla que ya está
+    # activa no hace nada. Un solo osascript que espera: bin/vkterm lo para
+    # antes de soltar la pestaña; si bin/vkterm muere sin pararlo, se para
+    # solo. Nunca abre la app: con ella cerrada, termina.
+    running || exit 0
+    script=$(cat <<'OSA'
+on run {terminalId, ownerPid}
+  repeat
+    delay 2
+    try
+      do shell script "kill -0 " & ownerPid
+    on error
+      return
+    end try
+    if not (application id @APP@ is running) then return
+    try
+      tell application id @APP@ to perform action "activate_key_table:vkterm" on terminal id terminalId
+    on error
+      return
+    end try
+  end repeat
+end run
+OSA
+)
+    exec osascript -e "${script//@APP@/\"$app_id\"}" ${2:?id} ${3:?pid} >/dev/null 2>&1
+    ;;
   reactivate)
     file= id= pid=
     for file in $state/projects/*/surface(N); do
@@ -147,7 +180,7 @@ OSA
     done
     ;;
   *)
-    print -u2 "uso: vkterm-surface claim NONCE | release ID | settle ID | focus ID | detach ID | open DIR [ACCIÓN] | reactivate"
+    print -u2 "uso: vkterm-surface claim NONCE | release ID | settle ID | focus ID | detach ID | open DIR [ACCIÓN] | reactivate | keep ID PID"
     exit 2
     ;;
 esac

@@ -96,4 +96,6 @@ if (( ! found )); then
     micro_command "tab ${(qq)name}"
   fi
 fi
+# Desde la búsqueda en el proyecto (⌘⇧F): la línea del resultado.
+[[ ${VKTERM_LINE:-} == <1-> ]] && micro_command "goto $VKTERM_LINE"
 focus $id

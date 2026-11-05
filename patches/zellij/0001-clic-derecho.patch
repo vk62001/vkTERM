@@ -1,0 +1,79 @@
+diff --git a/zellij-server/src/tab/mouse_handler.rs b/zellij-server/src/tab/mouse_handler.rs
+index da83963b..a71e4093 100644
+--- a/zellij-server/src/tab/mouse_handler.rs
++++ b/zellij-server/src/tab/mouse_handler.rs
+@@ -187,6 +187,12 @@ enum MouseAction {
+         pane_id: PaneId,
+         event: MouseEvent,
+     },
++    // vkTERM: right click focuses the pane under the pointer and reaches
++    // plugins as Mouse::RightClick (0.45.1 drops both).
++    RightClick {
++        pane_id: PaneId,
++        event: MouseEvent,
++    },
+     FrameIntercepted {
+         pane_id: PaneId,
+     },
+@@ -887,6 +893,9 @@ impl MouseHandler {
+             MouseAction::SendToTerminal { pane_id, event } => {
+                 Self::execute_send_to_terminal(tab, pane_id, event, client_id)
+             },
++            MouseAction::RightClick { pane_id, event } => {
++                Self::execute_right_click(tab, pane_id, event, client_id)
++            },
+             MouseAction::FrameIntercepted { pane_id: _ } => {
+                 tab.set_force_render();
+                 Ok(MouseEffect::state_changed())
+@@ -1316,6 +1325,36 @@ impl MouseHandler {
+         Ok(mouse_effect)
+     }
+ 
++    fn execute_right_click(
++        tab: &mut Tab,
++        pane_id: PaneId,
++        event: MouseEvent,
++        client_id: ClientId,
++    ) -> Result<MouseEffect> {
++        let err_context = || format!("failed to right click pane {pane_id:?}");
++        let focus_changed = tab.get_active_pane_id(client_id) != Some(pane_id);
++        if focus_changed {
++            clear_hover_for_client(tab, client_id);
++            Self::focus_pane_at(tab, &event.position, client_id).with_context(err_context)?;
++        }
++        if matches!(pane_id, PaneId::Plugin(_)) {
++            if let Some(pane) = tab.get_pane_with_id_mut(pane_id) {
++                if !pane.position_is_on_frame(&event.position) {
++                    let relative_position = pane.relative_position(&event.position);
++                    pane.handle_right_click(&relative_position, client_id);
++                }
++            }
++        } else {
++            Self::execute_send_to_terminal(tab, pane_id, event, client_id)
++                .with_context(err_context)?;
++        }
++        Ok(if focus_changed {
++            MouseEffect::state_changed()
++        } else {
++            MouseEffect::default()
++        })
++    }
++
+     fn determine_mouse_action(event: &MouseEvent, ctx: &MouseEventContext) -> Result<MouseAction> {
+         if ctx.pane_being_resized {
+             return Ok(match event.event_type {
+@@ -1537,6 +1576,14 @@ impl MouseHandler {
+             let Some(pane_id) = ctx.pane_id_at_position else {
+                 return Ok(MouseAction::NoAction);
+             };
++            if event.event_type == MouseEventType::Press
++                && (Some(pane_id) != ctx.active_pane_id || matches!(pane_id, PaneId::Plugin(_)))
++            {
++                return Ok(MouseAction::RightClick {
++                    pane_id,
++                    event: *event,
++                });
++            }
+             let is_active_pane = Some(pane_id) == ctx.active_pane_id;
+             if is_active_pane {
+                 return Ok(MouseAction::SendToTerminal {

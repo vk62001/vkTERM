@@ -28,6 +28,12 @@ window-padding-balance = true
 # vkTERM.app es una copia de Ghostty: se actualiza con Ghostty y
 # `bin/vkterm-app install`, nunca por su cuenta.
 auto-update = off
+# ssh: los servidores no conocen TERM=xterm-ghostty (nano: «Error opening
+# terminal: xterm-ghostty»). La integración de zsh de Ghostty envuelve `ssh`:
+# la primera vez instala ese terminfo en ~/.terminfo del servidor y lo
+# recuerda (ghostty +ssh-cache); si no puede (sin `tic`), entra con
+# TERM=xterm-256color.
+shell-integration-features = ssh-env,ssh-terminfo
 
 # ⌥ Option: los dos escriben los caracteres del teclado, como en cualquier
 # app de macOS y en VS Code (Spanish - ISO: ⌥2 = @, ⌥3 = #, [ ] { } | \ ~).
@@ -89,12 +95,19 @@ keybind = super+==csi:31;9~
 keybind = super+-=csi:32;9~
 keybind = super+0=csi:33;9~
 
+# ⌘C: copia la selección, como siempre. Ghostty 1.3.1 lo trae `performable`
+# (sin selección, la tecla pasa al programa), y los atajos `performable` no
+# van al menú: Edición › Copiar salía sin ⌘C. Así el menú lo muestra; sin
+# selección, ⌘C no hace nada, como en Terminal o iTerm2.
+keybind = super+c=copy_to_clipboard:mixed
+
 # ⌘V: pega el texto, como siempre. Con `performable:`, si el portapapeles no
 # tiene texto (una captura de pantalla), Ghostty no pega nada y envía la tecla
 # al programa, que la recibe si usa el protocolo de teclado de kitty. Claude
 # Code y Codex adjuntan la imagen con ⌃V: en el modo terminal corren a través
 # de bin/vkterm-agent (config/zsh/vkterm.zsh), que les cambia ese ⌘V por ⌃V.
-# En el IDE lo hace el plugin vkterm (abajo).
+# En el IDE lo hace el plugin vkterm (abajo). Por ser `performable`,
+# Edición › Pegar no muestra ⌘V (pega igual).
 keybind = performable:super+v=paste_from_clipboard
 
 # ----------------------------------------------------------------- modo IDE
@@ -147,6 +160,19 @@ keybind = vkterm/super+alt+arrow_down=esc:j
 keybind = vkterm/super+p=esc:0
 keybind = vkterm/super+shift+p=esc:;
 
+# Lenguaje (LSP), como VS Code: ⌘I sugerencias, ⌘K ⌘I información, ⇧F12
+# referencias, ⌘K ⌘F dar formato, ⌘K ⌘R cambiar el nombre del símbolo y ⌘⇧O
+# símbolos del archivo. F12 (definición) lo recibe Micro sin pasar por aquí.
+keybind = vkterm/super+i=esc:>
+keybind = vkterm/super+k>super+i=esc:^
+keybind = vkterm/shift+f12=esc:|
+keybind = vkterm/super+k>super+f=esc:~
+keybind = vkterm/super+k>super+r=esc:@
+keybind = vkterm/super+shift+o=esc:}
+
+# ⌘⇧F: buscar (y reemplazar) en todo el proyecto.
+keybind = vkterm/super+shift+f=esc:{
+
 # ⌘S: guardar en Micro.
 keybind = vkterm/super+s=esc:OQ
 
@@ -159,6 +185,11 @@ keybind = vkterm/super+n=esc:d
 # Enter abre. En el modo terminal, ⌘R no hace nada especial.
 keybind = vkterm/super+r=esc:_
 
+# ⌘.: el menú del clic derecho del explorador para lo seleccionado. Zellij
+# 0.45.1 no les pasa el clic derecho a los plugins. ⇧F10, el atajo de VS
+# Code, también sirve con el foco en el explorador (lo recibe el plugin).
+keybind = vkterm/super+period=esc::
+
 # ⌘K ⌘S: ventana de atajos, como en VS Code (secuencia: ⌘K y después ⌘S).
 # Ghostty espera la segunda tecla sin límite de tiempo; si no es una de las
 # de abajo, envía las dos al programa. En el modo terminal ⌘K limpia la
@@ -167,6 +198,9 @@ keybind = vkterm/super+k>super+s=esc:?
 
 # ⌘K Z: ampliar o restaurar el panel con el foco, como el modo Zen de VS Code
 # (secuencia: ⌘K y después Z).
+# ⌘K ⌘C: copia todo el historial del panel con el foco (Claude Code, Codex,
+# Shell), porque seleccionar con el ratón se rompe al girar la rueda.
+keybind = vkterm/super+k>super+c=esc:+
 keybind = vkterm/super+k>z=esc:z
 
 # ⌘K ⌘T: tema de color, como en VS Code (secuencia: ⌘K y después ⌘T).
@@ -229,9 +263,30 @@ keybind = chain=esc:c
 keybind = vkterm/super+v=paste_from_clipboard
 keybind = chain=esc:v
 
-# ⌘D / ⌘⇧D: Zellij gestiona los paneles del IDE; no se divide su pestaña. En
-# el modo terminal son las divisiones de Ghostty.
-keybind = vkterm/super+d=ignore
+# Edición avanzada, como VS Code. Igual que las anteriores, llegan al plugin
+# vkterm, que las pasa a Micro solo si el editor tiene el foco.
+#   ⌘D  añadir un cursor en la siguiente coincidencia (multicursor)
+#   ⌘/  comentar o descomentar la línea
+#   ⌘] ⌘[  indentar y quitar sangría
+#   ⌘G ⌘⇧G  siguiente / anterior coincidencia de la búsqueda
+#   ⌘L  seleccionar la línea       ⌘⇧K  borrar la línea
+#   ⌘↑ ⌘↓  principio / fin del archivo
+# ⌥↑ ⌥↓ mueven la línea y ⌥⇧↑ ⌥⇧↓ la duplican: son teclas de Micro
+# (config/micro/bindings.json) y no necesitan atajo aquí.
+keybind = vkterm/super+d=esc:!
+keybind = vkterm/super+/=esc:#
+keybind = vkterm/super+shift+7=esc:#
+keybind = vkterm/super+bracket_right=esc:$
+keybind = vkterm/super+bracket_left=esc:%
+keybind = vkterm/super+g=esc:&
+keybind = vkterm/super+shift+g=esc:(
+keybind = vkterm/super+l=esc:)
+keybind = vkterm/super+shift+k=esc:<
+keybind = vkterm/super+arrow_up=csi:1;5H
+keybind = vkterm/super+arrow_down=csi:1;5F
+
+# ⌘⇧D: Zellij gestiona los paneles del IDE; no se divide su pestaña. En el
+# modo terminal es la división de Ghostty.
 keybind = vkterm/super+shift+d=ignore
 
 # ⌘⇧,: recargar la configuración. Ghostty vacía las tablas de atajos al

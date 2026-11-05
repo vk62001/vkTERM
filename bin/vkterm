@@ -230,7 +230,15 @@ if (( taken == 2 )) && focus_open $project; then
   exit 0
 fi
 
+# Ghostty puede apagar el modo IDE en cualquier recarga de su configuración
+# (bin/vkterm-surface keep): un vigilante lo vuelve a encender mientras dure
+# el IDE, y se para antes de soltar la pestaña.
+$bin/vkterm-surface keep $id $$ &!
+keeper=$!
+stop_keeper() { kill $keeper 2>/dev/null || true }
+
 restore() {
+  stop_keeper
   $bin/vkterm-surface release $id || true
   ( sleep 3; $bin/vkterm-surface settle $id ) >/dev/null 2>&1 &!
   # Como al salir de vim: el cursor vuelve a donde estaba y se borra lo que
@@ -239,7 +247,7 @@ restore() {
   print -n "\e8\e[J\e]7;file://${HOST}${PWD}\a" > /dev/tty 2>/dev/null || true
 }
 # Al cerrar la pestaña (SIGHUP) ya no hay terminal que restaurar.
-trap '[[ -z $surface ]] || rm -f $surface; exit 129' HUP
+trap 'stop_keeper; [[ -z $surface ]] || rm -f $surface; exit 129' HUP
 # \e7 guarda la posición del cursor para restore().
 print -n "\e7" > /dev/tty
 code=0

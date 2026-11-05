@@ -81,6 +81,37 @@ else
   row vkterm "sin enlace" "bin/vkterm-app install --link (o usa bin/vkterm)"
 fi
 
+print "\nSesiones abiertas del IDE"
+# Lo que rompe las sesiones que llevan horas abiertas sin que lo vean las
+# pruebas, que siempre arrancan una nueva: la caché de Zellij vaciada (cada
+# ventana nueva se queda escondida pidiendo «Allow?») y un plugin recompilado
+# después de abrir la sesión (las ventanas nuevas usan otro código que el
+# explorador).
+if VKTERM_HOME=${0:A:h:h} ${0:A:h:h}/bin/vkterm-permissions --check; then
+  row permisos ok "Zellij guarda los permisos del plugin vkterm"
+else
+  row permisos FALTAN "las ventanas se quedarán pidiendo «Allow?»: bin/vkterm-permissions (o abre una carpeta)"
+fi
+open_sessions=(${(f)"$(zellij list-sessions --short --no-formatting 2>/dev/null | grep '^vk-' || true)"})
+(( $#open_sessions )) || row sesiones "" "ninguna abierta"
+for session in $open_sessions; do
+  stuck=$(zellij -s $session action list-panes -a -j 2>/dev/null | jq -r '[.[]
+    | select(.is_plugin and .is_floating and ((.plugin_url // "") | test("vkterm")) and (.title | endswith("vkterm")))
+    | "plugin_\(.id)"] | join(" ")' 2>/dev/null || true)
+  server=$(pgrep -f -- "zellij --server .*/$session\$" | head -1)
+  started=0
+  if [[ -n $server ]]; then
+    started=$(date -j -f "%a %b %e %T %Y" "$(ps -o lstart= -p $server)" +%s 2>/dev/null || print 0)
+  fi
+  if [[ -n $stuck ]]; then
+    row $session atascada "ventana pidiendo permisos ($stuck): zellij -s $session action close-pane -p ${stuck%% *}"
+  elif [[ -f $wasm ]] && (( started > 0 && $(stat -f %m $wasm) > started )); then
+    row $session desfasada "el plugin se recompiló después de abrirla: ⌘K F y vuelve a abrir la carpeta"
+  else
+    row $session ok ""
+  fi
+done
+
 print "\nLenguajes (LSP, opcional: bin/vkterm-plugins install)"
 ${0:A:h:h}/bin/vkterm-plugins status | sed 's/^vkterm-plugins: /  /'
 

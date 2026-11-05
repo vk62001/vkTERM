@@ -227,6 +227,19 @@ remote() {
   return $code
 }
 
+# Historial de un archivo (con sus renombrados) y «quién cambió cada línea».
+file_log() {
+  pager_setup && less=1 || less=0
+  git log --follow -p --stat --date=short -- $1
+  (( less )) || wait_key ""
+}
+
+file_blame() {
+  pager_setup && less=1 || less=0
+  git blame -w --date=short -- $1
+  (( less )) || wait_key ""
+}
+
 case ${1:-} in
   status)
     status "${2:-}" "${3:-}"
@@ -299,8 +312,16 @@ case ${1:-} in
   show)
     print -r -- "${2:-}" | less -R -+F
     ;;
+  log)
+    (( $# >= 2 )) || { print -u2 "uso: vkterm-git log RUTA"; exit 2; }
+    file_log "$2"
+    ;;
+  blame)
+    (( $# >= 2 )) || { print -u2 "uso: vkterm-git blame RUTA"; exit 2; }
+    file_blame "$2"
+    ;;
   *)
-    print -u2 "uso: vkterm-git status|branches|stage|unstage|stage-all|unstage-all|discard|clean|commit|abort|diff|remote|show"
+    print -u2 "uso: vkterm-git status|branches|stage|unstage|stage-all|unstage-all|discard|clean|commit|abort|diff|remote|show|log|blame"
     exit 2
     ;;
 esac

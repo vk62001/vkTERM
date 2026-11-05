@@ -44,6 +44,7 @@ mod picker;
 mod prompt;
 mod recent;
 mod scm;
+mod search;
 mod status;
 
 use std::collections::BTreeMap;
@@ -59,6 +60,7 @@ use picker::Picker;
 use prompt::Prompt;
 use recent::Recent;
 use scm::Scm;
+use search::Search;
 use status::StatusBar;
 use vkterm::applier::{Applier, Steps};
 use vkterm::clipboard;
@@ -85,6 +87,13 @@ const TICK: f64 = 1.0;
 /// Cada cuántos ticks se vuelve a leer el estado de git aunque no cambie
 /// nada en la carpeta (un commit desde fuera de ella).
 const GIT_TICKS: u32 = 5;
+/// Cada cuántos ticks se comprueba que Zellij sigue guardando los permisos
+/// del plugin (bin/vkterm-permissions): si alguien vacía su caché, cada
+/// ventana nueva se queda pidiéndolos.
+const PERMISSION_TICKS: u32 = 10;
+/// Ticks que una ventana del plugin puede seguir con el título por defecto
+/// de Zellij antes de darla por atascada pidiendo permisos.
+const STUCK_TICKS: u32 = 2;
 const AGENTS: [&str; 2] = ["Claude Code", "Codex"];
 /// Permisos de todas las instancias (explorador, atajos y temas). Reconfigure
 /// cambia el tema de Zellij; MessageAndLaunchOtherPlugins avisa al explorador
@@ -164,6 +173,9 @@ struct State {
     /// hay ninguno).
     last_focus: Option<String>,
     ticks: u32,
+    /// Ventanas del plugin aún con el título por defecto de Zellij: id → tick
+    /// en que se vieron por primera vez (grant_stuck_windows).
+    untitled: BTreeMap<u32, u32>,
     /// ⌘K F en curso: agentes en marcha mientras se pregunta a Micro.
     closing: Option<Vec<String>>,
     /// Carpeta que abrir en esta pestaña después de cerrar la actual («Abrir
@@ -184,6 +196,7 @@ enum Window {
     Themes(Picker),
     Fonts(Fonts),
     Palette(palette::Palette),
+    Search(Search),
     Recent(Recent),
     Confirm(Confirm),
     Menu(ContextMenu),
@@ -221,6 +234,12 @@ impl ZellijPlugin for State {
                 let mut palette = palette::Palette::default();
                 palette.load();
                 self.window = Some(Window::Palette(palette));
+                return;
+            }
+            Some("search") => {
+                let mut search = Search::default();
+                search.load();
+                self.window = Some(Window::Search(search));
                 return;
             }
             Some("recent") => {
@@ -301,6 +320,7 @@ impl ZellijPlugin for State {
             Some(Window::Themes(picker)) => return picker.update(event),
             Some(Window::Fonts(fonts)) => return fonts.update(event),
             Some(Window::Palette(palette)) => return palette.update(event),
+            Some(Window::Search(search)) => return search.update(event),
             Some(Window::Recent(recent)) => return recent.update(event),
             Some(Window::Confirm(confirm)) => return confirm.update(event),
             Some(Window::Menu(menu)) => return menu.update(event),
@@ -369,7 +389,9 @@ impl ZellijPlugin for State {
             Event::Timer(_) => {
                 self.tick();
                 set_timeout(TICK);
-                false
+                let stuck = self.grant_stuck_windows();
+                let changed = self.window.is_none() && self.rescan();
+                stuck || changed
             }
             Event::RunCommandResult(code, stdout, stderr, ctx) if ctx.contains_key("vkterm") => {
                 let stdout = String::from_utf8_lossy(&stdout);
@@ -408,6 +430,7 @@ impl ZellijPlugin for State {
             Some(Window::Themes(picker)) => return picker.pipe(message),
             Some(Window::Fonts(fonts)) => return fonts.pipe(message),
             Some(Window::Palette(palette)) => return palette.pipe(message),
+            Some(Window::Search(search)) => return search.pipe(message),
             Some(Window::Recent(recent)) => return recent.pipe(message),
             Some(Window::Confirm(confirm)) => return confirm.pipe(message),
             Some(Window::Menu(menu)) => return menu.pipe(message),
@@ -438,6 +461,7 @@ impl ZellijPlugin for State {
             Some(Window::Themes(picker)) => return picker.render(rows, cols),
             Some(Window::Fonts(fonts)) => return fonts.render(rows, cols),
             Some(Window::Palette(palette)) => return palette.render(rows, cols),
+            Some(Window::Search(search)) => return search.render(rows, cols),
             Some(Window::Recent(recent)) => return recent.render(rows, cols),
             Some(Window::Confirm(confirm)) => return confirm.render(rows, cols),
             Some(Window::Menu(menu)) => return menu.render(rows, cols),
@@ -535,10 +559,14 @@ impl State {
             // en su menú (src/contextmenu.rs).
             "context_menu" => self.context_menu(payload.trim()),
             "menu_action" => self.menu_action(payload.trim()),
+            // ⌘.: el menú del clic derecho del explorador, con el teclado.
+            "explorer_menu" => self.explorer_menu(),
             // De la paleta (src/commands.rs).
             "open" => {
                 self.status = None;
-                self.open(Path::new(payload.trim()), true);
+                // «ruta» o «ruta<TAB>línea» (resultados de ⌘⇧F).
+                let (file, line) = payload.trim().split_once('\t').unwrap_or((payload.trim(), ""));
+                self.open_at(Path::new(file), line.parse().ok());
             }
             // ⌘N: pide el nombre (src/prompt.rs) y lo crea.
             "new_file" => self.new_file(),
@@ -558,6 +586,7 @@ impl State {
                 }
             }
             "zoom" => toggle_focus_fullscreen(),
+            "copy_pane" => self.copy_pane(),
             "toggle_excluded" => self.tree.show_excluded = !self.tree.show_excluded,
             // ⌘⇧E y ⌃⇧G: la vista de la barra lateral, como en VS Code.
             "show_view" => self.show_view(payload.trim()),
@@ -605,7 +634,7 @@ impl State {
         self.rows.saturating_sub(HEADER_ROWS + FOOTER_ROWS)
     }
 
-    fn load_dir(&mut self, dir: &Path) {
+    fn load_dir(&mut self, dir: &Path) -> bool {
         let host_dir = Path::new(HOST).join(dir);
         match std::fs::read_dir(&host_dir) {
             Ok(read) => {
@@ -616,10 +645,31 @@ impl State {
                         is_dir: e.path().is_dir(),
                     })
                     .collect();
-                self.tree.set_listing(dir, entries);
+                self.tree.set_listing(dir, entries)
             }
-            Err(_) => self.tree.forget(dir),
+            Err(_) => {
+                self.tree.forget(dir);
+                true
+            }
         }
+    }
+
+    /// Los avisos del sistema de archivos de Zellij no llegan siempre (volúmenes
+    /// externos, archivos creados por los agentes o por programas en otro
+    /// panel): cada segundo se vuelven a leer las carpetas abiertas y se
+    /// dibuja solo si algo cambió.
+    fn rescan(&mut self) -> bool {
+        let mut changed = false;
+        for dir in self.tree.loaded_dirs() {
+            let before = self.tree.is_loaded(&dir);
+            if before && self.load_dir(&dir) {
+                changed = true;
+            }
+        }
+        if changed {
+            self.scm.mark_dirty();
+        }
+        changed
     }
 
     /// Vuelve a leer las carpetas afectadas por cambios en el disco.
@@ -700,6 +750,11 @@ impl State {
                 Action::None
             }
             BareKey::Esc => Action::None,
+            // ⇧F10, como en VS Code: el menú del clic derecho.
+            BareKey::F(10) if key.has_only_modifiers(&[KeyModifier::Shift]) => {
+                self.explorer_menu();
+                Action::None
+            }
             BareKey::Char(c) if plain || key.has_only_modifiers(&[KeyModifier::Shift]) => {
                 self.tree.jump_to(c);
                 Action::None
@@ -730,6 +785,8 @@ impl State {
                 self.run(action, true);
             }
             // Como en VS Code, selecciona la entrada y abre su menú junto al puntero.
+            // Zellij 0.45.1 no les pasa el clic derecho a los plugins (sí su
+            // rama main): mientras tanto, ⌘. y ⇧F10 (`explorer_menu`).
             Mouse::RightClick(line, column) if line >= HEADER_ROWS as isize => {
                 let index = line as usize - HEADER_ROWS + self.tree.scroll;
                 self.tree.select_at(index);
@@ -786,7 +843,9 @@ impl State {
 
     fn run(&mut self, action: Action, focus: bool) {
         match action {
-            Action::Load(dir) => self.load_dir(&dir),
+            Action::Load(dir) => {
+                self.load_dir(&dir);
+            }
             Action::Open(file) => self.open(&file, focus),
             Action::None => {}
         }
@@ -794,6 +853,14 @@ impl State {
 
     /// Abre el archivo en una pestaña del editor central (bin/vkterm-open).
     fn open(&mut self, file: &Path, focus: bool) {
+        self.open_with(file, focus, None);
+    }
+
+    fn open_at(&mut self, file: &Path, line: Option<usize>) {
+        self.open_with(file, true, line);
+    }
+
+    fn open_with(&mut self, file: &Path, focus: bool, line: Option<usize>) {
         if is_binary(&Path::new(HOST).join(file)) {
             let name = file.file_name().unwrap_or_default().to_string_lossy();
             self.status = Some(format!("{name}: binario, no se abre"));
@@ -805,6 +872,9 @@ impl State {
         }
         if !focus {
             env.insert("VKTERM_NO_FOCUS".to_string(), "1".to_string());
+        }
+        if let Some(line) = line {
+            env.insert("VKTERM_LINE".to_string(), line.to_string());
         }
         let path = self.project.join(file);
         run_command_with_env_variables_and_cwd(
@@ -948,18 +1018,10 @@ impl State {
     /// interrumpiría. Ctrl-X y Ctrl-C son Cut|CutLine y Copy|CopyLine en
     /// Micro: sin selección, la línea entera.
     fn edit(&mut self, action: &str) {
-        let key = match action {
-            "undo" => 0x1a,
-            "redo" => 0x19,
-            "select_all" => 0x01,
-            "find" => 0x06,
-            "cut" => 0x18,
-            "copy" => 0x03,
-            _ => return,
-        };
+        let Some(key) = commands::edit_key(action) else { return };
         if let Some(editor) = self.terminal("Editor") {
             if self.focused_in(&[editor]) {
-                write_to_pane_id(vec![key], editor);
+                write_to_pane_id(key.to_vec(), editor);
             }
         }
     }
@@ -1000,6 +1062,24 @@ impl State {
         focus_pane_with_id(PaneId::Terminal(pane), false, false);
         self.menu_pane = Some(pane);
         self.open_menu(&pane.to_string(), menu::EDITOR, click);
+    }
+
+    /// ⌘. y ⇧F10: el menú del clic derecho para la entrada seleccionada del
+    /// explorador, justo debajo de ella. Desde otro panel, antes muestra el
+    /// explorador y le da el foco, que vuelve a él al cerrar el menú.
+    fn explorer_menu(&mut self) {
+        if self.view != View::Explorer || !self.sidebar_focused() {
+            self.show_view("explorer");
+        }
+        self.tree.keep_visible(self.list_height());
+        let rows = self.tree.rows();
+        let index = self.tree.selected_index(&rows);
+        let line = HEADER_ROWS + index.saturating_sub(self.tree.scroll);
+        // Donde empieza el nombre (ver render).
+        let column = 1 + 2 * rows.get(index).map_or(0, |r| r.depth) + 2;
+        let me = self.panes.iter().find(|p| p.is_plugin && p.id == self.me);
+        let click = me.map_or((column, line), |p| (p.pane_content_x + column, p.pane_content_y + line));
+        self.open_menu("explorer", menu::EXPLORER, click);
     }
 
     /// Abre el menú contextual (src/contextmenu.rs) junto al puntero, dentro de
@@ -1061,6 +1141,20 @@ impl State {
         let row = self.tree.selected_path().and(self.tree.selected());
         let folder = newfile::folder(row.as_ref().map(|r| (r.path.as_path(), r.is_dir)));
         launch_window("new_file", "newfile", Some(folder.to_string_lossy().into_owned()));
+    }
+
+    /// ⌘K ⌘C: copia al portapapeles todo el historial del panel con el foco
+    /// (Claude Code, Codex, Shell). Seleccionar con el ratón no sirve para
+    /// textos de varias pantallas: al girar la rueda la selección se pierde.
+    fn copy_pane(&mut self) {
+        let pane = self.panes.iter().find(|p| !p.is_plugin && !p.is_floating && self.has_focus(p));
+        let Some(pane) = pane else {
+            self.status = Some("Pon el foco en Claude Code, Codex o el Shell para copiar su historial".to_string());
+            return;
+        };
+        let script = format!("zellij action dump-screen --full --pane-id terminal_{} | pbcopy", pane.id);
+        self.run_with_session(&["sh", "-c", &script], "copy_pane");
+        self.status = Some("Historial del panel copiado al portapapeles".to_string());
     }
 
     /// «Mostrar en Finder» la entrada seleccionada del explorador (`open -R`).
@@ -1148,6 +1242,7 @@ impl State {
             "palette_files" => ("palette_files", "palette"),
             "palette_commands" => ("palette_commands", "palette"),
             "recent" => ("toggle_recent", "recent"),
+            "search" => ("toggle_search", "search"),
             _ => return,
         };
         launch_window(name, mode, None);
@@ -1392,6 +1487,9 @@ impl State {
         if self.asked_theme {
             self.scm.tick(&self.project);
         }
+        if self.ticks % PERMISSION_TICKS == 0 {
+            run_command(&["vkterm-permissions"], context("permissions"));
+        }
         if !self.restored || self.closing.is_some() {
             return;
         }
@@ -1400,6 +1498,36 @@ impl State {
             run_command(&["vkterm-state", "save", "workspace", &text], BTreeMap::new());
             self.saved_memory = text;
         }
+    }
+
+    /// Una ventana del plugin que no se pone su título se quedó escondida
+    /// pidiendo permisos a Zellij («Allow? (y/n)»): pasa si se vacía su caché
+    /// con la sesión abierta. Mientras exista, su atajo no abre otra, y
+    /// cerrarla no basta: Zellij no vuelve a lanzar esa ventana. Se le
+    /// contesta «y», una vez, como haría el usuario en su panel; Zellij guarda
+    /// la respuesta y la ventana se abre. true si hay que dibujar el aviso.
+    fn grant_stuck_windows(&mut self) -> bool {
+        let untitled: Vec<u32> = self
+            .panes
+            .iter()
+            .filter(|p| p.is_plugin && p.is_floating && p.title.ends_with("vkterm"))
+            .filter(|p| p.plugin_url.as_deref().is_some_and(|url| url.contains("vkterm")))
+            .map(|p| p.id)
+            .collect();
+        self.untitled.retain(|id, _| untitled.contains(id));
+        let mut granted = false;
+        for id in untitled {
+            let since = *self.untitled.entry(id).or_insert(self.ticks);
+            if self.ticks.wrapping_sub(since) == STUCK_TICKS {
+                let pane = format!("plugin_{id}");
+                self.run_with_session(&["zellij", "action", "send-keys", "-p", &pane, "y"], "grant");
+                granted = true;
+            }
+        }
+        if granted {
+            self.status = Some("Zellij había olvidado los permisos de vkTERM: repuestos".to_string());
+        }
+        granted
     }
 
     // ------------------------------------------------------- cerrar carpeta

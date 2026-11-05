@@ -1,0 +1,59 @@
+#!/bin/zsh
+# vkTERM — permisos del plugin vkterm en la caché de Zellij.
+#
+#   vkterm-permissions          los vuelve a escribir si faltan; entonces
+#                               imprime «restored»
+#   vkterm-permissions --check  solo comprueba: código 1 si faltan
+#
+# Zellij guarda los permisos concedidos a cada plugin en
+# ~/Library/Caches/org.Zellij-Contributors.Zellij/permissions.kdl y los lee
+# cada vez que carga una instancia. Si esa carpeta se vacía (un limpiador,
+# macOS cuando falta espacio), cada ventana nueva de vkTERM (atajos, menú
+# contextual, paleta…) se queda escondida pidiendo «Allow? (y/n)» y no se ve
+# nada, también en las sesiones que ya estaban abiertas. Lo ejecutan
+# bin/vkterm-workspace antes de arrancar Zellij y el plugin vkterm de cada
+# sesión (src/main.rs), que además cierra la ventana que se quedó pidiendo.
+emulate -L zsh
+setopt err_exit no_unset pipe_fail
+
+vkterm_home=${VKTERM_HOME:-${0:A:h:h}}
+cache=${VKTERM_ZELLIJ_CACHE:-$HOME/Library/Caches/org.Zellij-Contributors.Zellij}
+file=$cache/permissions.kdl
+# config.kdl: location="file:/$VKTERM_HOME/…"; la clave es lo que va tras «file:».
+header="\"/$vkterm_home/plugins/vkterm/target/wasm32-wasip1/release/vkterm.wasm\" {"
+# Los de PERMISSIONS en plugins/vkterm/src/main.rs.
+permissions=(ReadApplicationState ChangeApplicationState WriteToStdin RunCommands Reconfigure
+             MessageAndLaunchOtherPlugins)
+
+granted=()
+if [[ -f $file ]]; then
+  granted=(${(f)"$(awk -v header=$header '
+    $0 == header { inside = 1; next }
+    inside && /^}/ { exit }
+    inside { print $1 }' $file)"})
+fi
+missing=0
+for permission in $permissions; do
+  (( ${granted[(Ie)$permission]} )) || missing=1
+done
+(( missing )) || exit 0
+[[ ${1:-} == --check ]] && exit 1
+
+# Las demás entradas se conservan; la de vkterm se escribe entera.
+mkdir -p $cache
+tmp=$(mktemp $cache/.permissions.XXXXXX)
+{
+  if [[ -f $file ]]; then
+    awk -v header=$header '
+      $0 == header { skip = 1; next }
+      skip && /^}/ { skip = 0; next }
+      !skip' $file
+  fi
+  print -r -- $header
+  for permission in $permissions; do
+    print -r -- "    $permission"
+  done
+  print -r -- "}"
+} > $tmp
+mv -f $tmp $file
+print restored

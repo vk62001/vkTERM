@@ -52,8 +52,24 @@ show_release_notes false
 // se escribe lo toman sus atajos (e: editar el scrollback, s: buscar…).
 scroll_mode_sync false
 
+// El clic en un panel sin el foco lo enfoca y además llega al panel, como en
+// VS Code: arrastrar en el Shell selecciona (y copia al soltar), en el editor
+// pone el cursor y en el explorador elige el archivo. Por defecto, Zellij solo
+// enfocaba: el primer arrastre no seleccionaba nada y ⌘C no tenía qué copiar.
+mouse_click_through true
+
 // El layout del proyecto es la fuente de verdad: no resucitar sesiones viejas.
 session_serialization false
+
+// Los paneles hablan con Zellij, no con Ghostty: ven TERM=xterm-256color (lo
+// que emula Zellij, como tmux-256color en tmux) y no el xterm-ghostty de
+// fuera. Con ese, ssh desde el Shell del IDE llegaba a servidores sin su
+// terminfo: ⌃L, clear, nano o htop fallaban («unknown terminal type»). La
+// integración de Ghostty que lo arregla en el modo terminal (`ssh` instala el
+// terminfo) no se carga en los shells de Zellij. COLORTERM=truecolor sigue.
+env {
+    TERM "xterm-256color"
+}
 
 // Cerrar la pestaña o la ventana de vkTERM.app termina la sesión (y Micro,
 // Claude Code y Codex), como cerrar una ventana de VS Code. Lo que se recuerda
@@ -251,7 +267,7 @@ keybinds clear-defaults=true {
         bind "Alt l" { MoveFocusOrTab "Right"; }
         bind "Alt j" { MoveFocus "Down"; }
         bind "Alt k" { MoveFocus "Up"; }
-        bind "Alt =" "Alt +" { Resize "Increase"; }
+        bind "Alt =" { Resize "Increase"; }
         bind "Alt -" { Resize "Decrease"; }
         bind "Alt i" { MoveTab "Left"; }
         bind "Alt o" { MoveTab "Right"; }
@@ -273,6 +289,9 @@ keybinds clear-defaults=true {
         // ⌘R: «Renombrar…» lo seleccionado en el explorador (VS Code usa F2,
         // que no todos los teclados tienen).
         bind "Alt _" { MessagePlugin "vkterm" { name "rename_file"; }; }
+        // ⌘.: el menú del clic derecho del explorador (Zellij 0.45.1 no les
+        // pasa el clic derecho a los plugins).
+        bind "Alt :" { MessagePlugin "vkterm" { name "explorer_menu"; }; }
         // ⌘K F: cerrar la carpeta (pregunta si se perdería algo) y volver al
         // modo terminal.
         bind "Alt q" { MessagePlugin "vkterm" { name "close_folder"; }; }
@@ -302,6 +321,14 @@ keybinds clear-defaults=true {
                 floating true
             };
         }
+        // ⌘⇧F: buscar en todo el proyecto (mode "search").
+        bind "Alt {" {
+            MessagePlugin "vkterm" {
+                name "toggle_search"
+                mode "search"
+                floating true
+            };
+        }
         bind "Alt ," { MessagePlugin "vkterm" { name "prev_tab"; }; }
         bind "Alt ." { MessagePlugin "vkterm" { name "next_tab"; }; }
         // Edición, como VS Code (⌘Z ⌘⇧Z ⌘A ⌘F ⌘X ⌘C): el plugin la pasa a
@@ -312,6 +339,27 @@ keybinds clear-defaults=true {
         bind "Alt s" { MessagePlugin "vkterm" { name "edit"; payload "find"; }; }
         bind "Alt x" { MessagePlugin "vkterm" { name "edit"; payload "cut"; }; }
         bind "Alt c" { MessagePlugin "vkterm" { name "edit"; payload "copy"; }; }
+        // Edición avanzada (⌘D multicursor, ⌘/ comentar, ⌘] ⌘[ sangría, ⌘G ⌘⇧G
+        // siguiente / anterior, ⌘L línea, ⌘⇧K borrar línea): igual que las de
+        // arriba, solo con el editor enfocado.
+        bind "Alt !" { MessagePlugin "vkterm" { name "edit"; payload "multicursor"; }; }
+        bind "Alt #" { MessagePlugin "vkterm" { name "edit"; payload "comment"; }; }
+        bind "Alt $" { MessagePlugin "vkterm" { name "edit"; payload "indent"; }; }
+        bind "Alt %" { MessagePlugin "vkterm" { name "edit"; payload "outdent"; }; }
+        bind "Alt &" { MessagePlugin "vkterm" { name "edit"; payload "find_next"; }; }
+        bind "Alt (" { MessagePlugin "vkterm" { name "edit"; payload "find_prev"; }; }
+        bind "Alt )" { MessagePlugin "vkterm" { name "edit"; payload "select_line"; }; }
+        bind "Alt <" { MessagePlugin "vkterm" { name "edit"; payload "delete_line"; }; }
+        // Lenguaje (LSP, plugin µlsp de Micro): ⌘I sugerencias, ⌘K ⌘I información,
+        // ⇧F12 referencias, ⌘K ⌘F formato, ⌘K ⌘R cambiar nombre, ⌘⇧O símbolos.
+        // F12 (ir a la definición) llega directo a Micro.
+        bind "Alt >" { MessagePlugin "vkterm" { name "edit"; payload "lsp_complete"; }; }
+        bind "Alt ^" { MessagePlugin "vkterm" { name "edit"; payload "lsp_hover"; }; }
+        bind "Alt |" { MessagePlugin "vkterm" { name "edit"; payload "lsp_references"; }; }
+        bind "Alt ~" { MessagePlugin "vkterm" { name "edit"; payload "lsp_format"; }; }
+        bind "Alt @" { MessagePlugin "vkterm" { name "edit"; payload "lsp_rename"; }; }
+        bind "Alt +" { MessagePlugin "vkterm" { name "copy_pane"; }; }
+        bind "Alt }" { MessagePlugin "vkterm" { name "edit"; payload "lsp_symbols"; }; }
         // ⌘V (tras pegar el texto): imagen del portapapeles a Claude Code o Codex.
         bind "Alt v" { MessagePlugin "vkterm" { name "paste"; }; }
         // Ventana de atajos: otra instancia del plugin (mode "shortcuts") en

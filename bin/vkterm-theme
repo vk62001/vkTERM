@@ -6,6 +6,7 @@
 #   vkterm-theme value CLAVE      zellij o micro: el nombre del tema guardado
 #   vkterm-theme reload           Ghostty relee la configuración (⌘⇧, en el IDE)
 #   vkterm-theme sync             theme.ghostty con el tema guardado (al abrir el IDE)
+#   vkterm-theme terminal PID     el Ghostty que dibuja el terminal de PID (o nada)
 #
 # Cada tema (config/themes/themes.json) tiene, con el nombre vkterm-<id>, un
 # tema de Ghostty, uno de Zellij y un esquema de Micro (scripts/gen-themes.py).
@@ -36,10 +37,32 @@ value() {
   print -r -- "vkterm-$id"
 }
 
-# Ghostty que muestra esta sesión: se sube por los procesos padre de sus
-# clientes de Zellij (o, sin sesión, por los de este proceso: ⌘+ en el prompt
-# del modo terminal, bin/vkterm-font). SIGUSR2 le hace releer la
-# configuración: todas sus ventanas cambian de tema.
+# Ghostty que dibuja el terminal del proceso $1: el padre del primero de los
+# procesos de ese terminal (mismo tty), si es Ghostty. Sin el límite del tty,
+# un cliente en el pseudoterminal de otro programa (scripts/smoke-test.py
+# ejecutado desde una pestaña de vkTERM.app) llegaba hasta el Ghostty de esa
+# pestaña y lo recargaba: las pestañas del IDE del usuario perdían los
+# atajos ⌘.
+terminal_of() {
+  local pid=$1 tty comm
+  tty=$(ps -o tty= -p $pid 2>/dev/null | tr -d ' ')
+  [[ -n $tty ]] || return 0
+  while (( pid > 1 )); do
+    pid=$(ps -o ppid= -p $pid 2>/dev/null | tr -d ' ')
+    [[ -n $pid ]] || return 0
+    comm=$(ps -o comm= -p $pid 2>/dev/null) || return 0
+    if [[ ${comm:t} == ghostty ]]; then
+      print $pid
+      return 0
+    fi
+    [[ $(ps -o tty= -p $pid | tr -d ' ') == $tty ]] || return 0
+  done
+}
+
+# Ghostty que muestra esta sesión: el de sus clientes de Zellij (o, sin
+# sesión, el de este proceso: ⌘+ en el prompt del modo terminal,
+# bin/vkterm-font). SIGUSR2 le hace releer la configuración: todas sus
+# ventanas cambian de tema.
 #
 # Al recargar, Ghostty vacía las tablas de atajos: las pestañas en modo IDE
 # volverían al modo terminal. bin/vkterm-surface les devuelve la suya cuando
@@ -47,20 +70,16 @@ value() {
 # nada). Sin segundo plano: Zellij termina los procesos que deja un comando
 # del plugin, y el plugin no espera este resultado.
 reload_ghostty() {
-  local pid comm reloaded=0 starts=($$)
+  local pid ghostty reloaded=0 starts=($$)
   if [[ -n ${ZELLIJ_SESSION_NAME:-} ]]; then
     starts=($(pgrep -f -- "zellij .*(--session|attach) $ZELLIJ_SESSION_NAME( |\$)"))
   fi
   for pid in $starts; do
-    while (( pid > 1 )); do
-      comm=$(ps -o comm= -p $pid 2>/dev/null) || break
-      if [[ ${comm:t} == ghostty ]]; then
-        kill -USR2 $pid
-        reloaded=1
-        break
-      fi
-      pid=$(ps -o ppid= -p $pid | tr -d ' ')
-    done
+    ghostty=$(terminal_of $pid)
+    if [[ -n $ghostty ]]; then
+      kill -USR2 $ghostty
+      reloaded=1
+    fi
   done
   if (( reloaded )); then
     sleep 0.8
@@ -80,6 +99,9 @@ case ${1:-} in
     ;;
   reload)
     reload_ghostty
+    ;;
+  terminal)
+    terminal_of ${2:?uso: vkterm-theme terminal PID}
     ;;
   sync)
     # Antes de 0.3.0, theme.ghostty tenía el nombre de un tema de Ghostty;
@@ -106,7 +128,7 @@ case ${1:-} in
     reload_ghostty
     ;;
   *)
-    print -u2 "uso: vkterm-theme current | set ID | value zellij|micro | reload | sync"
+    print -u2 "uso: vkterm-theme current | set ID | value zellij|micro | reload | sync | terminal PID"
     exit 2
     ;;
 esac

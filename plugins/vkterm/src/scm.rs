@@ -239,6 +239,19 @@ impl Scm {
     /// Desde la paleta: pull, push, sync, fetch, stage_all, unstage_all,
     /// commit, compare, abort, refresh.
     pub fn command(&mut self, name: &str, project: &Path) {
+        if name == "init" {
+            if self.status.repo {
+                self.notice = Some("La carpeta ya tiene un repositorio git".to_string());
+            } else {
+                run_command_with_env_variables_and_cwd(
+                    &["git", "init"],
+                    BTreeMap::new(),
+                    project.to_path_buf(),
+                    crate::context("git_action"),
+                );
+            }
+            return;
+        }
         if !self.status.repo {
             self.notice = Some("La carpeta no tiene un repositorio git".to_string());
             return;
